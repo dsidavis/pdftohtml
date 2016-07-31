@@ -1,0 +1,104 @@
+pdftohtml 0.10
+==============
+First public release
+
+pdftohtml 0.20
+==============
+-added complex document extraction 
+-added image extraction
+-added pdftohtml script
+
+pdftohtml 0.21
+==============
+-added support for colored fonts
+-bugfixes
+
+pdftohtml 0.22
+==============
+- fixed Digital C++ compilation bug
+- fixed -e bug
+- other bugfixes
+
+pdftohtml 0.30 (test version)
+==============
+-Added pdf-vector drawings extraction
+-HTML output compatible with MI 4.0 
+  (using the patches by Claus Hulstrom and Zoltan Hawryluk)
+-output for XML post-processing (patch by Anjo Anjewierden)
+-zoom option
+-other bugfixes
+
+pdftohtml 0.31 (test version)
+==============
+-bugfixes
+
+pdftohtml 0.32 (*test* version)
+-updated to use xpdf 1.0
+
+pdftohtml 0.32b
+===============
+-experimental ability to specify output encoding (UTF-8 might work)
+-ability to specify user/master password
+-fixed core dump on documents with type 3 fonts only
+-fixed bug with inline images not being handled properly
+
+pdftohtml 0.33
+==============
+-Ghostscript is executed from the program itself, no need for external script
+-ps output (for complex mode) is produced by pdftohtml, got rid of pdftops
+-several XML-related fixes
+-several memory leaks fixed (should not crash on large files now)
+
+pdftohtml 0.33a
+===============
+-bug fixes
+-join multiple <b></b>'s and <i></i>'s together
+
+pdftohtml 0.34
+=============
+-command line option to extract hidden text
+-parts of hrefs (links) are joined together (just like <b> and <i>)
+-paragraphs joined together
+-fixed a crash
+-updated Xpdf to 1.01
+-can produce noframes (single html file) output for complex mode
+
+pdftohtml 0.35
+===============
+-somewhat better HTML 4.01 compliance
+-added meta author, keywords and date
+-added mechanism for correct charsets
+-fixed bug with links pointing nowhere for '-c -noframes'
+-fixed bug with page numbering
+-fixed bug with collapsing text for '-c -noframes -i'
+-updated Xpdf to 2.01 (security fix among others)
+
+pdftohtml 0.36
+=====================
+-added support for different Ghostscript output devices (-dev)
+-updated Xpdf to 2.02 (security fix)
+-a couple of fixes and tweaks for better output
+-ported duplicate lines elimination from pdftotext (does not affect complex mode)
+-fixed bug which caused bold to spread from one sentence to the entire document
+-support for document outlines (patch by Nicolas Pitre)
+
+pdftohtml 0.37
+=====================
+-updated Xpdf to 2.03 (javelinv@users.sourceforge.net)
+
+pdftohtml 0.38
+=====================
+-updated Xpdf to 3.00 (javelinv@users.sourceforge.net)
+-CAN-2005-3193 (security fix)
+
+pdftohtml 0.39
+=====================
+-removed files that were not needed from project directorys and makefiles. 
+Should correct most of the build problems people have been haveing.
+-reenable hyperlinks in ouputed html pages.
+
+pdftohtml 0.40
+=====================
+-updated Xpdf to 3.01p2
+-improved the output of complex mode documents
+-fixed links, Thay should not include text that should not be part of the link anymore.

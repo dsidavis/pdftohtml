@@ -1,0 +1,109 @@
+HtmlPage::addChar() was starting a new string when it encountered a space.
+    Undone this.
+
+
+
+
+
+
+pdftothml  (see first stack trace)
+  creates a PDFDoc.
+     which reads the PDF and interprets it.
+  calls doc-displayPages() 
+     It passes is htmlOut  a HtmlOutputDev object.  See HtmlOutputDev.h
+     This HtmlOutputDev has start and end page methods.
+
+
+Then Page::display() is called and this leads to the HtmlOutputDev::endPage() call
+And this calls HtmlPage::dump and this then calls its own dumpAsXML() method.
+
+The HtmlPage::dumpAsXML (HtmlOutputDev.cc 641) writes the fonts and the text.
+ What else does it have access to at this point. Look at the HtmlPage class in HtmlOutputDev.h
+ It has an addChar() method.  Where is this called?
+ Can we add a addRectangle()/curve/line method to this class - HtmlPage?
+
+Where is addChar() called  (add a breakpoint and run)
+See trace 2
+  Gfx is calling doShowText().  Now out->useDrawChar() has to be true.
+  Gfx has methods opLineTo{,1,2} and other curve and opRectangle methods.
+    In opRectangle() it calls the state->moveTo(), state->lineTo()
+      Note: We lose the "rectangle" aspect of this and would have to piece together the consecutive lines that are connected.
+      The stat is the GFxState.
+    Gfx.h has the OutputDev, but isn't calling it for opRectangle. But is in doShowText()
+    Perhaps opClosePath() is the place.
+
+
+The opStroke() method does call out->stroke
+and doEndPath() calls out->clip() (or eoClip)
+opBeginText() calls out-?updateTextMat/Pos().
+opEndText() calls out->endTextObject()
+
+
+
+When PDF sets e.g. line dash, line cap, line width etc.  out->update* is called.
+
+
+The GFx holds the resources for the pages. But the graphical elements are coming by us as they are processed (?)
+
+out->dump() called in the Gfx::go() method and that seems to be the interpreter.
+in opFilllStroke()
+   out->fill()
+   out->stroke()
+
+
+
+
+
+
+HtmlPage holds the text in yxStrings
+  addChar() and endString()
+  endString is called from Gfx::opShowText -> Gfx::doShowText() -> endString
+
+HtmlOutputDevice::needNoText()  currently returns false.
+  Changed now. Can create an extended class.
+  However this only affects whether images are included or not.
+  It is only used in Gfx.cc twice - once to skip pattern fill, and for Image in opXObject
+
+
+The GfxState maintains "the state" of the graphics such as line cap, dash, 
+ and also has methds for lineTo(), curveTo() and moveTo().
+
+The Gfx has the out.
+
+
+
+Are the rectangles, etc. stored in the GfxState and present when HtmlOutputDev::endPage() is called?
+ If so, we can get them then from the state.
+ Appears not!
+
+
+
+
+
+-------------------------
+
+Stack trace for HtmlPage::dump
+
+
+HtmlPage::dumpAsXML (this=0x6df6e0, f=0x6dfd20, page=1) at HtmlOutputDev.cc:637
+#1  0x00000000004038e8 in HtmlPage::dump (this=0x6df6e0, f=0x6dfd20, pageNum=1) at HtmlOutputDev.cc:766
+#2  0x0000000000404972 in HtmlOutputDev::endPage (this=0x6df090) at HtmlOutputDev.cc:1110
+#3  0x0000000000440fe3 in Gfx::~Gfx (this=0x6df210, __in_chrg=<value optimized out>) at Gfx.cc:509
+#4  0x000000000041cee4 in Page::displaySlice (this=<value optimized out>, out=0x6df090, hDPI=108, vDPI=108, rotate=<value optimized out>, useMediaBox=<value optimized out>, crop=1, sliceX=<value optimized out>, sliceY=-1, sliceW=-1, sliceH=-1, links=0x6deff0, catalog=0x6db980, abortCheckCbk=0, abortCheckCbkData=0x0) at Page.cc:347
+#5  0x000000000041d289 in Page::display (this=<value optimized out>, out=<value optimized out>, hDPI=<value optimized out>, vDPI=<value optimized out>, rotate=<value optimized out>, useMediaBox=<value optimized out>, crop=<value optimized out>, links=<value optimized out>, catalog=0x6db980, abortCheckCbk=0, abortCheckCbkData=0x0) at Page.cc:223
+#6  0x000000000041e1ed in PDFDoc::displayPages (this=0x6db4e0, out=0x6df090, firstPage=<value optimized out>, lastPage=1, hDPI=108, vDPI=108, rotate=0, useMediaBox=1, crop=1, doLinks=1, abortCheckCbk=0, abortCheckCbkData=0x0) at PDFDoc.cc:343
+#7  0x000000000040848d in main (argc=2, argv=<value optimized out>) at pdftohtml.cc:291
+
+
+
+trace 2
+
+#0  HtmlPage::addChar (this=0x6df6e0, state=0x6e0c70, x=80.879999999999995, y=686.15999999999997, dx=5.8713999999999995, dy=0, ox=0, oy=0, u=0x7fffffffdd50, uLen=1) at HtmlOutputDev.cc:255
+#1  0x000000000044150f in Gfx::doShowText (this=0x6df210, s=0x6e08a0) at Gfx.cc:2815
+#2  0x000000000044248a in Gfx::opShowText (this=0x6df210, args=0x7fffffffde30, numArgs=<value optimized out>) at Gfx.cc:2596
+#3  0x0000000000440463 in Gfx::go (this=0x6df210, topLevel=1) at Gfx.cc:566
+#4  0x0000000000440756 in Gfx::display (this=0x6df210, obj=0x7fffffffdfe0, topLevel=1) at Gfx.cc:538
+#5  0x000000000041cdc1 in Page::displaySlice (this=0x6dbb50, out=0x6df090, hDPI=108, vDPI=108, rotate=<value optimized out>, useMediaBox=<value optimized out>, crop=1, sliceX=<value optimized out>, sliceY=-1, sliceW=-1, sliceH=-1, links=0x6deff0, catalog=0x6db980, abortCheckCbk=0, abortCheckCbkData=0x0) at Page.cc:317
+#6  0x000000000041d289 in Page::display (this=<value optimized out>, out=<value optimized out>, hDPI=<value optimized out>, vDPI=<value optimized out>, rotate=<value optimized out>, useMediaBox=<value optimized out>, crop=<value optimized out>, links=<value optimized out>, catalog=0x6db980, abortCheckCbk=0, abortCheckCbkData=0x0) at Page.cc:223
+#7  0x000000000041e1ed in PDFDoc::displayPages (this=0x6db4e0, out=0x6df090, firstPage=<value optimized out>, lastPage=1, hDPI=108, vDPI=108, rotate=0, useMediaBox=1, crop=1, doLinks=1, abortCheckCbk=0, abortCheckCbkData=0x0) at PDFDoc.cc:343
+#8  0x000000000040848d in main (argc=2, argv=<value optimized out>) at pdftohtml.cc:291
