@@ -18,7 +18,7 @@ FOFILIBDIR = ../fofi
 SPLASHSRCDIR = $(srcdir)/../splash
 SPLASHLIBDIR = ../splash
 
-CXXFLAGS +=  -g -O2 -DHAVE_CONFIG_H -I.. -I$(GOOSRCDIR) -I$(FOFISRCDIR) -I$(SPLASHSRCDIR) -I$(srcdir)           -I/usr/X11R6/include
+CXXFLAGS +=  -g -DHAVE_CONFIG_H -I.. -I$(GOOSRCDIR) -I$(FOFISRCDIR) -I$(SPLASHSRCDIR) -I$(srcdir)           -I/usr/X11R6/include
 
 CC ?= cc
 CXX ?= c++
