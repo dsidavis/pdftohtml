@@ -272,6 +272,10 @@ public:
 
   GBool dumpDocOutline(Catalog* catalog);
 
+
+  //  void stroke(GfxState *state);
+  void fill(GfxState *state) ;
+
 private:
   // convert encoding into a HTML standard, or encoding->getCString if not
   // recognized

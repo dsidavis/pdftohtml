@@ -1149,14 +1149,11 @@ void HtmlOutputDev::updateFont(GfxState *state) {
 }
 
 void HtmlOutputDev::beginString(GfxState *state, GString *s) {
-  printf("out::beginString %s\n", s->getCString());
-  if(strcmp(s->getCString(), "Kernel Wt") == 0) pages->debug = 1;
   pages->beginString(state, s);
 }
 
 void HtmlOutputDev::endString(GfxState *state) {
   pages->endString();
-  if(pages->debug) { pages->showStrings(); pages->debug = 0; }
 }
 
 
@@ -1175,7 +1172,6 @@ void HtmlOutputDev::drawChar(GfxState *state, double x, double y,
   }
 
   pages->addChar(state, x, y, dx, dy, originX, originY, u, uLen);
-  if(pages->debug) { printf("addChar\n"); pages->showStrings(); }
 }
 
 void HtmlOutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str,
@@ -1660,4 +1656,12 @@ GBool HtmlOutputDev::newOutlineLevel(FILE *output, Object *node, Catalog* catalo
 void HtmlOutputDev::updateCharSpace(GfxState *state)
 {
 	pages->updateCharSpace(state);
+}
+
+
+
+
+void HtmlOutputDev::fill(GfxState *state) 
+{
+  printf("fill\n");
 }
