@@ -140,7 +140,7 @@ public:
   void showStrings();
 
   void addFill(GfxState *state);
-  void dumpAsXML(FILE *f, GfxSubpath *sp);
+  void dumpAsXML(FILE *f, GfxSubpath *sp, bool indent = false);
 
 private:
   HtmlFont* getFont(HtmlString *hStr) { return fonts->Get(hStr->fontpos); }
