@@ -718,7 +718,7 @@ void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, bool indent) {
     double y2 = sp->getY(2);
     if(x0 == x3 && x1 == x2 && y0 == y1 && y2 == y3) {
 #if 1
-        fprintf(f, "%s<rect bbox=\"%.3lf,%.3lf,%.3lf,%.3lf\">\n", 
+        fprintf(f, "%s<rect bbox=\"%.3lf,%.3lf,%.3lf,%.3lf\" />\n", 
                       indent ? "\n   " : "",
                 x0, y0, x1, y1);
 #else
