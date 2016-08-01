@@ -685,8 +685,28 @@ void HtmlPage::dumpAsXML(FILE* f,int page){
       fputs("</text>\n",f);
     }
   }
+
+  for(int i = 0; i < paths.getLength() ; i++) {
+    GfxPath *p = (GfxPath *) paths.get(i);
+    int nsubs = p->getNumSubpaths();
+    fprintf(f, "<path n=\"%d\">", nsubs);
+    for(int j = 0; j < nsubs; j++)
+      dumpAsXML(f, p->getSubpath(j));
+    fprintf(f, "</path>\n");
+  }
+
   fputs("</page>\n",f);
 }
+
+void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp) {
+  int n = sp->getNumPoints();
+
+  fprintf(f, "\n   <coords>");
+  for(int i = 0; i < n ; i++) 
+    fprintf(f, "\n      <coord>%0.3lf %0.3lf</coord>", sp->getX(i),  sp->getY(i));
+  fprintf(f, "\n   </coords>");
+}
+
 
 
 void HtmlPage::dumpComplex(FILE *file, int page){
@@ -1131,6 +1151,7 @@ void HtmlOutputDev::startPage(int pageNum, GfxState *state) {
 
 void HtmlOutputDev::endPage() {
   pages->conv();
+  //XXX  Do we want to add this back???
   //  pages->coalesce();
   pages->dump(page, pageNum);
   
@@ -1663,5 +1684,12 @@ void HtmlOutputDev::updateCharSpace(GfxState *state)
 
 void HtmlOutputDev::fill(GfxState *state) 
 {
-  printf("fill\n");
+  pages->addFill(state);
+}
+
+
+void HtmlPage::addFill(GfxState *state)
+{
+  GfxPath *p = state->getPath()->copy();
+  paths.append(p);
 }

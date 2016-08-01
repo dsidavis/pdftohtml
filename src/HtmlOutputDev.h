@@ -138,6 +138,10 @@ public:
   void conv();
 
   void showStrings();
+
+  void addFill(GfxState *state);
+  void dumpAsXML(FILE *f, GfxSubpath *sp);
+
 private:
   HtmlFont* getFont(HtmlString *hStr) { return fonts->Get(hStr->fontpos); }
 
@@ -165,6 +169,10 @@ private:
   int pageHeight;
   static int pgNum;
   int firstPage;                // used to begin the numeration of pages
+
+
+  GList paths;
+
 
   friend class HtmlOutputDev;
 
@@ -307,5 +315,27 @@ private:
 
   friend class HtmlPage;
 };
+
+#if 0
+class StreamHtmlOutputDev : public HtmlOutputDev {
+
+ public:
+  StreamHtmlOutputDev(char *fileName, char *title, 
+		      char *author,
+		      char *keywords,
+		      char *subject,
+		      char *date,
+		      char *extension,
+		      GBool rawOrder,
+		      int firstPage = 1,
+		      GBool outline = 0);)
+
+  virtual GBool needNonText() { return gTrue; }
+  virtual void startPage(int pageNum, GfxState *state);
+  virtual void endPage();
+  virtual void updateFont(GfxState *state);
+  virtual void updateCharSpace(GfxState *state);
+}
+#endif
 
 #endif
