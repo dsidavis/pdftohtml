@@ -705,7 +705,7 @@ void HtmlPage::dumpAsXML(FILE* f,int page){
 void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, bool indent) {
   int n = sp->getNumPoints();
  
-  if(n = 4) {
+  if(n == 4) {
     // check to see if we have a rectangle.
 
     double x0 = sp->getX(0);
@@ -717,11 +717,16 @@ void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, bool indent) {
     double y1 = sp->getY(1);
     double y2 = sp->getY(2);
     if(x0 == x3 && x1 == x2 && y0 == y1 && y2 == y3) {
+#if 1
+        fprintf(f, "%s<rect bbox=\"%.3lf,%.3lf,%.3lf,%.3lf\">\n", 
+                      indent ? "\n   " : "",
+                x0, y0, x1, y1);
+#else
       fprintf(f, "%s<rect>", indent ? "\n   " : "");
       for(int i = 0; i < 4; i++)
   	  fprintf(f, "%.3lf %3.lf%s", sp->getX(i), sp->getY(i), i < 3 ? " " : "");
       fprintf(f, "</rect>\n");
-
+#endif
       return;
     }
   }
