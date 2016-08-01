@@ -693,7 +693,7 @@ void HtmlPage::dumpAsXML(FILE* f, int page){
     if(nsubs > 1) {
       fprintf(f, "<paths n=\"%d\">", nsubs);
       for(int j = 0; j < nsubs; j++)
-	dumpAsXML(f, p->getSubpath(j), true);
+  	  dumpAsXML(f, p->getSubpath(j), true);
       fprintf(f, "</paths>\n");
     } else
       dumpAsXML(f, p->getSubpath(0), false);
@@ -718,9 +718,16 @@ void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, bool indent) {
     double y2 = sp->getY(2);
     if(x0 == x3 && x1 == x2 && y0 == y1 && y2 == y3) {
 #if 1
+/* From Gfx.cc::opRectangle.   
+
+        p3 = (x, y+h), p2 = (x+w, y+h), 
+
+        p0 = (x, y),   p1 = (x+w, y)
+
+*/
         fprintf(f, "%s<rect bbox=\"%.3lf,%.3lf,%.3lf,%.3lf\" />\n", 
                       indent ? "\n   " : "",
-                x0, y0, x1, y1);
+                x0, y0, x2, y2);
 #else
       fprintf(f, "%s<rect>", indent ? "\n   " : "");
       for(int i = 0; i < 4; i++)
@@ -729,6 +736,17 @@ void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, bool indent) {
 #endif
       return;
     }
+  } else if(n == 2) {
+      // a line
+    double x0 = sp->getX(0);
+    double x1 = sp->getX(1);
+    double y0 = sp->getY(0);
+    double y1 = sp->getY(1);
+    fprintf(f, "%s<line bbox=\"%.3lf,%.3lf,%.3lf,%.3lf\" />\n", 
+                      indent ? "\n   " : "",
+                x0, y0, x1, y1);    
+
+    return;
   }
 
   fprintf(f, "\n   <coords>");
@@ -1722,5 +1740,35 @@ void HtmlOutputDev::fill(GfxState *state)
 void HtmlPage::addFill(GfxState *state)
 {
   GfxPath *p = state->getPath()->copy();
+  // transform
+  transformPath(p, state);
   paths.append(p);
+}
+
+void 
+HtmlPage::transformPath(GfxPath *p, GfxState *state)
+{
+    int nsubs = p->getNumSubpaths();
+    for(int j = 0; j < nsubs; j++)
+       transformPath(p->getSubpath(j), state);
+}
+
+void 
+HtmlPage::transformPath(GfxSubpath *sp, GfxState *state)
+{
+    int n = sp->getNumPoints();
+    double x, y, nx, ny;
+    for(int i = 0; i < n ; i++) {
+        x = sp->getX(i);
+        y = sp->getY(i);
+        state->transform(x, y, &nx, &ny);
+        sp->setX(i, nx);
+        sp->setY(i, ny);
+    }
+}
+
+void HtmlOutputDev::stroke(GfxState *state) 
+{
+//    fprintf(stderr, "HtmlOutputDev::stroke\n");
+    pages->addFill(state);
 }

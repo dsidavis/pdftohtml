@@ -934,6 +934,9 @@ public:
   // Add (<dx>, <dy>) to each point in the subpath.
   void offset(double dx, double dy);
 
+  void setX(int i, double val) { x[i] = val; }
+  void setY(int i, double val) { y[i] = val; }
+
 private:
 
   double *x, *y;		// points

@@ -1,0 +1,12 @@
+In sample.pdf created by R, we are getting text elements with a value of q.
+
+For the paths, do we need to deal with the current transformation
+  location, scaling.
+
+  In KimShauman/inst/SampleCVs/CVTsoukiasweb_pdftohtml.xml, the <rect>
+  has values that are 538, 5794, 4563, 5819 - so in the thousands for a
+  page width and height 918 and 1188
+
+
+Get colors of rectangles, etc.
+  fill and line colors

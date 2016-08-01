@@ -1154,12 +1154,6 @@ void Gfx::opRectangle(Object args[], int numArgs) {
   state->lineTo(x + w, y + h);
   state->lineTo(x, y + h);
   state->closePath();
-
-#ifdef DUNCAN
-  if(out->needNonText()) 
-    out->opRectangle(x, y, x + w, y + y);
-#endif
-
 }
 
 void Gfx::opClosePath(Object args[], int numArgs) {

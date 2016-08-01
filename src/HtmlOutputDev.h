@@ -139,8 +139,12 @@ public:
 
   void showStrings();
 
+
   void addFill(GfxState *state);
   void dumpAsXML(FILE *f, GfxSubpath *sp, bool indent = false);
+
+  void transformPath(GfxSubpath *sp, GfxState *state);
+  void transformPath(GfxPath *p, GfxState *state);
 
 private:
   HtmlFont* getFont(HtmlString *hStr) { return fonts->Get(hStr->fontpos); }
@@ -283,6 +287,7 @@ public:
 
   //  void stroke(GfxState *state);
   void fill(GfxState *state) ;
+  void stroke(GfxState *state);
 
 private:
   // convert encoding into a HTML standard, or encoding->getCString if not
