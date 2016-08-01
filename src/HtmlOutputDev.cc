@@ -659,7 +659,7 @@ void HtmlPage::coalesce() {
 }
 
 
-void HtmlPage::dumpAsXML(FILE* f,int page){  
+void HtmlPage::dumpAsXML(FILE* f, int page){  
   fprintf(f, "<page number=\"%d\" position=\"absolute\"", page);
   fprintf(f," top=\"0\" left=\"0\" height=\"%d\" width=\"%d\">\n", pageHeight,pageWidth);
     
@@ -670,7 +670,7 @@ void HtmlPage::dumpAsXML(FILE* f,int page){
   }
   
   GString *str, *str1;
-  for(HtmlString *tmp=yxStrings;tmp;tmp=tmp->yxNext){
+  for(HtmlString *tmp = yxStrings; tmp ;  tmp = tmp->yxNext){
     if (tmp->htext){
       str=new GString(tmp->htext);
       fprintf(f,"<text top=\"%d\" left=\"%d\" ",xoutRound(tmp->yMin),xoutRound(tmp->xMin));
@@ -705,7 +705,7 @@ void HtmlPage::dumpAsXML(FILE* f,int page){
 void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, bool indent) {
   int n = sp->getNumPoints();
  
-  if(n == 4) {
+  if(n == 5) {
     // check to see if we have a rectangle.
 
     double x0 = sp->getX(0);
