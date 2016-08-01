@@ -2,6 +2,23 @@ HtmlPage::addChar() was starting a new string when it encountered a space.
     Undone this.
 
 
+We'd ideally like to emit the content as they are read from the PDF stream.
+We don't do this because 1) pdftohtml wasn't setup this way, 2)  we may have 
+to compute the locations for the text/characters ourselves, 3) we'd have to change
+when the <page> ...  are emitted.  3) is related to 1) and not a big deal.
+Because of 1) & 3), we have to collect the paths in  the the HtmlPage as they are
+encountered and annouced with out->fill().  We copy the path and then emit
+the XML for the subpaths.
+
+The paths have little information. We can identify them as lines, rectangles, etc.
+with an enum in the GfxPath so that we can emit the appropriate XML element easily.
+Currently we check the coordinates of the path to see if it is a rectangle.
+
+
+
+
+
+-----------
 
 
 
