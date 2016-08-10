@@ -1,3 +1,5 @@
+Add the rotation to each <page>.
+
 In sample.pdf created by R, we are getting text elements with a value of q.
 
 For the paths, do we need to deal with the current transformation
