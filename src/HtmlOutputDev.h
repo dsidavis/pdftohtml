@@ -177,6 +177,8 @@ private:
 
   GList paths;
 
+  double rotation;
+
 
   friend class HtmlOutputDev;
 

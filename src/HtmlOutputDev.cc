@@ -661,7 +661,7 @@ void HtmlPage::coalesce() {
 
 void HtmlPage::dumpAsXML(FILE* f, int page){  
   fprintf(f, "<page number=\"%d\" position=\"absolute\"", page);
-  fprintf(f," top=\"0\" left=\"0\" height=\"%d\" width=\"%d\">\n", pageHeight,pageWidth);
+  fprintf(f," top=\"0\" left=\"0\" height=\"%d\" width=\"%d\" rotation=\"%lf\">\n", pageHeight,pageWidth, rotation);
     
   for(int i=fontsPageMarker;i < fonts->size();i++) {
     GString *fontCSStyle = fonts->CSStyle(i);
@@ -1193,6 +1193,7 @@ void HtmlOutputDev::startPage(int pageNum, GfxState *state) {
 
   pages->pageWidth=static_cast<int>(state->getPageWidth());
   pages->pageHeight=static_cast<int>(state->getPageHeight());
+  pages->rotation = state->getRotate();
 
   delete str;
 } 
