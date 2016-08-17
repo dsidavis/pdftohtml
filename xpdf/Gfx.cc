@@ -678,6 +678,7 @@ void Gfx::execOp(Object *cmd, Object args[], int numArgs) {
 Operator *Gfx::findOp(char *name) {
   int a, b, m, cmp;
 
+//printf("op = %s\n", name);
   a = -1;
   b = numOps;
   // invariant: opTab[a] < name < opTab[b]
