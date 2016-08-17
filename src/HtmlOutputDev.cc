@@ -46,6 +46,10 @@ extern GBool xml;
 extern GBool showHidden;
 extern GBool noMerge;
 
+
+GBool HtmlOutputDev::doCoalesce = true;
+
+
 static GString* basename(GString* str){
   
   char *p=str->getCString();
@@ -658,6 +662,29 @@ void HtmlPage::coalesce() {
 
 }
 
+void HtmlPage::dumpImagesAsXML(FILE* f)
+{
+    int i = 0;
+    Image *img;
+
+// printf("# images on page %d = %d\n", pageNumber, images.getLength());
+    for(i = 0 ; i < images.getLength(); i++) {
+        img = (Image*) images.get(i);
+        img->dumpAsXML(f);
+    }
+}
+
+void HtmlPage::dumpLinksAsXML(FILE* f)
+{
+    int i = 0;
+    HtmlLink *l; // = links->getLink(i);
+
+//    while(l) {
+    for(i = 0 ; i < links->getNumLinks(); i++) {
+        l = links->getLink(i);
+        fprintf(f, "<ulink url=\"%s\" x1=\"%.3lf\" y1=\"%.3lf\" x2=\"%.3lf\"  y2=\"%.3lf\" />\n", l->getDest()->getCString(), l->getX1(), l->getY1(), l->getX2(), l->getY2());
+    }
+}
 
 void HtmlPage::dumpAsXML(FILE* f, int page){  
   fprintf(f, "<page number=\"%d\" position=\"absolute\"", page);
@@ -669,6 +696,10 @@ void HtmlPage::dumpAsXML(FILE* f, int page){
     delete fontCSStyle;
   }
   
+
+  dumpLinksAsXML(f);
+  dumpImagesAsXML(f);
+
   GString *str, *str1;
   for(HtmlString *tmp = yxStrings; tmp ;  tmp = tmp->yxNext){
     if (tmp->htext){
@@ -883,6 +914,40 @@ void HtmlPage::dump(FILE *f, int pageNum)
 }
 
 
+#if 0
+#define clearGList(list, T, del)                        \
+  do {                                              \
+    GList *_list = (list);                          \
+    {                                               \
+      int _i;                                       \
+      int _n = _list->getLength();                  \
+      for (_i = 0; _i < _n; ++_i) {                 \
+        T * el = (T*)_list->del(_i); \
+        if(del) delete (T*);                         \
+      }                                             \
+    }                                               \
+  } while (0)
+#endif
+
+
+#define clearGList(T)                               \
+void clear_##T##_GList(GList *_list, int del)       \
+{                                                   \
+      int _i;                                       \
+      int _n = _list->getLength();                  \
+      fprintf(stderr, "# elements in list %d\n", _list->getLength()); \
+      for (_i = 0; _i < _n; ++_i) {                 \
+        T * el = (T*)_list->del(_i);                \
+        if(del)                                     \
+           delete el;                               \
+      }                                             \
+      fprintf(stderr, "# elements left in list %d\n", _list->getLength()); \
+}
+
+clearGList(Image)
+clearGList(GfxPath)
+
+
 
 void HtmlPage::clear() {
   HtmlString *p1, *p2;
@@ -912,7 +977,11 @@ void HtmlPage::clear() {
 
   delete links;
   links=new HtmlLinks();
- 
+
+   clear_Image_GList(&images, 0);
+   clear_GfxPath_GList(&images, 0);
+//  clearGList(&images, Image, 1);
+//   clearGList(&paths, GfxPath, 0);
 
 }
 
@@ -1194,6 +1263,7 @@ void HtmlOutputDev::startPage(int pageNum, GfxState *state) {
   pages->pageWidth=static_cast<int>(state->getPageWidth());
   pages->pageHeight=static_cast<int>(state->getPageHeight());
   pages->rotation = state->getRotate();
+  pages->pageNumber++;
 
   delete str;
 } 
@@ -1202,7 +1272,8 @@ void HtmlOutputDev::startPage(int pageNum, GfxState *state) {
 void HtmlOutputDev::endPage() {
   pages->conv();
   //XXX  Do we want to add this back???
-  //  pages->coalesce();
+  if(doCoalesce)
+      pages->coalesce();
   pages->dump(page, pageNum);
   
   // I don't yet know what to do in the case when there are pages of different
@@ -1337,11 +1408,13 @@ void HtmlOutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str,
 }
 
 void HtmlOutputDev::drawImage(GfxState *state, Object *ref, Stream *str,
-			  int width, int height, GfxImageColorMap *colorMap,
-			  int *maskColors, GBool inlineImg) {
+                              int width, int height, GfxImageColorMap *colorMap,
+                              int *maskColors, GBool inlineImg) {
 
   int i, j;
    
+  pages->AddImage(state, ref, str, width, height, colorMap, maskColors, inlineImg);
+
   if (ignore||complexMode) {
     OutputDev::drawImage(state, ref, str, width, height, colorMap, 
 			 maskColors, inlineImg);
@@ -1772,4 +1845,28 @@ void HtmlOutputDev::stroke(GfxState *state)
 {
 //    fprintf(stderr, "HtmlOutputDev::stroke\n");
     pages->addFill(state);
+}
+
+
+
+void HtmlPage::AddImage(GfxState *state, Object *ref, Stream *str,
+                        int width, int height,
+                        GfxImageColorMap *colorMap, int *maskColors,
+                        GBool inlineImg)
+{
+// Can we get information out of the ref?
+// do we need to transform? Probably.
+
+//    double x, y, x1, y1;
+//  state->transform(state->getCurX(), state->getCurY(), &x, &y);
+//  state->transform(state->getCurX() + width, state->getCurY() + height, &x1, &y1);
+//  Image *img = new Image(x, y, x1 - x, y1 - y); //width, height);
+//printf("AddImage %d\n", pageNumber);
+    Image *img = new Image(state->getCurX(), state->getCurY(), width, height);
+    images.append(img);
+}
+
+void Image::dumpAsXML(FILE *f)
+{
+  fprintf(f, "<img x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" />\n", x, y, width, height);
 }
