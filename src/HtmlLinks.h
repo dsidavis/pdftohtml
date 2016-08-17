@@ -47,7 +47,7 @@ public:
  void AddLink(const HtmlLink& x) {accu->push_back(x);}
  GBool inLink(double xmin,double ymin,double xmax,double ymax,int& p) const;
  HtmlLink* getLink(int i) const;
-
+ int getNumLinks() { return accu->size();}
 };
 
 #endif
