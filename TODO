@@ -1,14 +1,30 @@
-Add the rotation to each <page>.
+Info about Images
+  Not recognizing the PDF image in map.pdf.  What is the op in the PDF processing.
+   This is a Do operation.  (pointing to Im1 which resolves to 17 0 obj)
+
+  are the x, y, width, height correct?  Compare with pdfminer?
+  width height position.
+  Format
+  can we get the name of the original file if it is available.
 
 In sample.pdf created by R, we are getting text elements with a value of q.
+   Can we do better?
 
-For the paths, do we need to deal with the current transformation
-  location, scaling.
+Get colors of rectangles, etc.
+  fill and line colors
+
+--------------------
+
+[done] Add the rotation to each <page>.
+
+[done] insert info. about links
+  HmtmlOutputDev::drawLink() while processing a page.
+  Calls pages->AddLink(t). So in the page.
+
+[done] For the paths, do we need to deal with the current transformation
+  Did we do this?  location, scaling.
 
   In KimShauman/inst/SampleCVs/CVTsoukiasweb_pdftohtml.xml, the <rect>
   has values that are 538, 5794, 4563, 5819 - so in the thousands for a
   page width and height 918 and 1188
 
-
-Get colors of rectangles, etc.
-  fill and line colors
