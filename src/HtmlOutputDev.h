@@ -90,6 +90,17 @@ private:
 //------------------------------------------------------------------------
 
 
+class Image {
+public:
+     Image(int x, int y, int width, int height) : 
+           x(x), y(y), width(width), height(height) {
+     }
+
+     void dumpAsXML(FILE *f);
+
+protected:
+    int x, y, width, height;
+};
 
 class HtmlPage {
 public:
@@ -121,7 +132,7 @@ public:
   // Find a string.  If <top> is true, starts looking at top of page;
   // otherwise starts looking at <xMin>,<yMin>.  If <bottom> is true,
   // stops looking at bottom of page; otherwise stops looking at
-  // <xMax>,<yMax>.  If found, sets the text bounding rectange and
+  // <xMax>,<yMax>.  If found, sets the text bounding rectangle and
   // returns true; otherwise returns false.
   
 
@@ -142,9 +153,15 @@ public:
 
   void addFill(GfxState *state);
   void dumpAsXML(FILE *f, GfxSubpath *sp, bool indent = false);
+  void dumpImagesAsXML(FILE* f);
 
   void transformPath(GfxSubpath *sp, GfxState *state);
   void transformPath(GfxPath *p, GfxState *state);
+
+  void AddImage(GfxState *state, Object *ref, Stream *str,
+		int width, int height, 
+		GfxImageColorMap *colorMap, int *maskColors,
+		GBool inlineImg);
 
 private:
   HtmlFont* getFont(HtmlString *hStr) { return fonts->Get(hStr->fontpos); }
@@ -160,6 +177,7 @@ private:
   
   void setDocName(char* fname);
   void dumpAsXML(FILE* f,int page);
+  void dumpLinksAsXML(FILE* f);
   void dumpComplex(FILE* f, int page);
 
   // marks the position of the fonts that belong to current page (for noframes)
@@ -174,11 +192,11 @@ private:
   static int pgNum;
   int firstPage;                // used to begin the numeration of pages
 
-
-  GList paths;
+  int pageNumber;
 
   double rotation;
-
+  GList paths;
+  GList images;
 
   friend class HtmlOutputDev;
 
@@ -290,6 +308,8 @@ public:
   //  void stroke(GfxState *state);
   void fill(GfxState *state) ;
   void stroke(GfxState *state);
+
+  static GBool doCoalesce;
 
 private:
   // convert encoding into a HTML standard, or encoding->getCString if not
