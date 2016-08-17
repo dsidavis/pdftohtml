@@ -47,6 +47,10 @@ GBool errQuiet=gFalse;
 
 GBool showHidden = gFalse;
 GBool noMerge = gTrue;
+
+GBool forceCopy = gFalse;
+
+
 static char ownerPassword[33] = "";
 static char userPassword[33] = "";
 static char gsDevice[33] = "png16m";
@@ -98,6 +102,8 @@ static ArgDesc argDesc[] = {
    "owner password (for encrypted files)"},
   {"-upw",    argString,   userPassword,   sizeof(userPassword),
    "user password (for encrypted files)"},
+  {"-force", argFlag, &forceCopy, 0, "copy the text even if the document indicates we are not allowed"},
+  {"-coalesce", argFlag, &HtmlOutputDev::doCoalesce, 0, "combine the strings"},
   {NULL}
 };
 
@@ -173,7 +179,7 @@ int main(int argc, char *argv[]) {
   }
 
   // check for copy permission
-  if (!doc->okToCopy()) {
+  if (!doc->okToCopy() && !forceCopy) {
     error(-1, "Copying of text from this document is not allowed.");
     goto error;
   }
