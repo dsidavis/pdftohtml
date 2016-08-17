@@ -11,7 +11,7 @@ class HtmlFontColor{
    unsigned int r;
    unsigned int g;
    unsigned int b;
-   GBool Ok(unsigned int xcol){ return ((xcol<=255)&&(xcol>=0));}
+   GBool Ok(unsigned int xcol){ return ((xcol<=255)/* &&(xcol>=0)*/);}
    GString *convtoX(unsigned  int xcol) const;
  public:
    HtmlFontColor():r(0),g(0),b(0){}
