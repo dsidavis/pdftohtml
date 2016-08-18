@@ -1,14 +1,20 @@
 Info about Images
-  Not recognizing the PDF image in map.pdf.  What is the op in the PDF processing.
-   This is a Do operation.  (pointing to Im1 which resolves to 17 0 obj)
+  Correct x, y, width and height for PDF images.
+  [Done now] Not recognizing the PDF image in map.pdf.  What is the op in the PDF processing.
+          This is a Do operation.  And a form (pointing to Im1 which resolves to 17 0 obj)
 
   are the x, y, width, height correct?  Compare with pdfminer?
   width height position.
   Format
-  can we get the name of the original file if it is available.
+  [yes] can we get the name of the original file if it is available.
+     And meta data for the file.
+
+   Memory management.
+
 
 In sample.pdf created by R, we are getting text elements with a value of q.
    Can we do better?
+
 
 Get colors of rectangles, etc.
   fill and line colors
