@@ -96,11 +96,32 @@ public:
            x(x), y(y), width(width), height(height) {
      }
 
-     void dumpAsXML(FILE *f);
+     virtual void dumpAsXML(FILE *f);
 
 protected:
     int x, y, width, height;
+
+     virtual void dumpAsXMLAttributes(FILE *f);
 };
+
+class NamedImage : public Image {
+public:
+     NamedImage(const char *filename, int x, int y, int width, int height) :  Image(x, y, width, height) {  
+	setFilename(filename);
+     }
+
+    void setFilename(const char *name) {
+	filename = strdup(name);
+    }
+
+    virtual void dumpAsXMLAttributes(FILE *f);
+
+    virtual void setPropsDict(Dict *dict) { propsDict = dict;}
+protected:
+    char *filename;
+    Dict *propsDict;
+};
+
 
 class HtmlPage {
 public:
@@ -309,6 +330,9 @@ public:
   void fill(GfxState *state) ;
   void stroke(GfxState *state);
 
+  void form1(GfxState *state, Object *str, Dict *resDict, double *matrix, double *bbox);
+
+  // used as a global variable in pdftohtml to control whether we coalesce the strings together across calls.
   static GBool doCoalesce;
 
 private:

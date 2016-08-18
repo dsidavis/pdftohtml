@@ -3447,6 +3447,7 @@ void Gfx::doForm1(Object *str, Dict *resDict, double *matrix, double *bbox) {
   state->lineTo(bbox[0], bbox[3]);
   state->closePath();
   state->clip();
+  out->form1(state, str, resDict, matrix, bbox);
   out->clip(state);
   state->clearPath();
 

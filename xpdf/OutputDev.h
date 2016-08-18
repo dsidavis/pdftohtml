@@ -182,6 +182,9 @@ public:
 				   int maskWidth, int maskHeight,
 				   GfxImageColorMap *maskColorMap);
 
+
+  virtual void form1(GfxState *state, Object *str, Dict *resDict, double *matrix, double *bbox) {}
+
 #if OPI_SUPPORT
   //----- OPI functions
   virtual void opiBegin(GfxState *state, Dict *opiDict);

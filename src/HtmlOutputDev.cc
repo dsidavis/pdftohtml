@@ -930,23 +930,24 @@ void HtmlPage::dump(FILE *f, int pageNum)
 #endif
 
 
+//      fprintf(stderr, "# elements in list %d\n", _list->getLength()); \
+//      fprintf(stderr, "# elements left in list %d\n", _list->getLength()); \
+
 #define clearGList(T)                               \
 void clear_##T##_GList(GList *_list, int del)       \
 {                                                   \
       int _i;                                       \
       int _n = _list->getLength();                  \
-      fprintf(stderr, "# elements in list %d\n", _list->getLength()); \
       for (_i = 0; _i < _n; ++_i) {                 \
         T * el = (T*)_list->del(_i);                \
         if(del)                                     \
            delete el;                               \
       }                                             \
-      fprintf(stderr, "# elements left in list %d\n", _list->getLength()); \
 }
 
+// instantiate these routines for these two types.
 clearGList(Image)
 clearGList(GfxPath)
-
 
 
 void HtmlPage::clear() {
@@ -1868,5 +1869,54 @@ void HtmlPage::AddImage(GfxState *state, Object *ref, Stream *str,
 
 void Image::dumpAsXML(FILE *f)
 {
-  fprintf(f, "<img x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" />\n", x, y, width, height);
+    fprintf(f, "<img ");
+    dumpAsXMLAttributes(f);
+    fprintf(f, "/>\n");
+}
+
+void Image::dumpAsXMLAttributes(FILE *f)
+{
+//    fprintf(f, "x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" ", x, y, width, height);
+    fprintf(f, "x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" ", 0, 0, 0, 0);
+}
+
+void NamedImage::dumpAsXMLAttributes(FILE *f)
+{
+    Image::dumpAsXMLAttributes(f);
+    fprintf(f, "filename=\"%s\" ", filename);
+    if(propsDict && 1) {
+        int i, n = propsDict->getLength();
+        for(i = 0; i < n ; i++) {
+            Object val;
+            propsDict->getVal(i, &val);
+            char *str = val.getString()->getCString();
+            fprintf(f, "%s=\"%s\" ", propsDict->getKey(i), str);
+        }
+    }
+}
+
+
+void HtmlOutputDev::form1(GfxState *state, Object *str, Dict *resDict, double *matrix, double *bbox)
+{
+    fprintf(stderr, "In HtmlOutputDev::form1\n");
+    Dict *dict = str->streamGetDict();
+   
+
+    Object filename;
+    dict->lookup("PTEX.FileName", &filename);
+
+    int width = 1, height = 1;
+    Image *img;
+    if(filename.isString()) {
+        char* fn = filename.getString()->getCString();
+        img = new NamedImage(fn, state->getCurX(), state->getCurY(), width, height);
+        Object imgInfo;
+        dict->lookup("PTEX.InfoDict", &imgInfo);
+        if(imgInfo.isDict())
+            ((NamedImage *) img)->setPropsDict(imgInfo.getDict());
+        
+    } else {
+        img = new Image(state->getCurX(), state->getCurY(), width, height);
+    }
+    pages->images.append(img);       
 }
