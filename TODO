@@ -1,5 +1,13 @@
+Fix the coalesce() routine and the fixFnt and <span/>. 
+  For now it is disabled.
+   We seem to be adding span elements even when the font isn't changing - it is being set, but still the same.
+
+Fix all the fontspecs in the XML that are the same.
+
+
 Info about Images
-  Correct x, y, width and height for PDF images.
+  Get the correct x, y, width and height for PDF images.
+    width and height seem to be the issue.
   [Done now] Not recognizing the PDF image in map.pdf.  What is the op in the PDF processing.
           This is a Do operation.  And a form (pointing to Im1 which resolves to 17 0 obj)
 
@@ -16,7 +24,7 @@ In sample.pdf created by R, we are getting text elements with a value of q.
    Can we do better?
 
 
-Get colors of rectangles, etc.
+Get colors and line width, styles, etc of rectangles, lines etc.
   fill and line colors
 
 --------------------
