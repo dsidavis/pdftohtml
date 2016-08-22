@@ -670,6 +670,7 @@ void Gfx::execOp(Object *cmd, Object args[], int numArgs) {
       return;
     }
   }
+//printf("execOp op = %s\n", name);
 
   // do it
   (this->*op->func)(argPtr, numArgs);
@@ -678,7 +679,7 @@ void Gfx::execOp(Object *cmd, Object args[], int numArgs) {
 Operator *Gfx::findOp(char *name) {
   int a, b, m, cmp;
 
-//printf("op = %s\n", name);
+//  fprintf(stderr, "op = %s\n", name);
   a = -1;
   b = numOps;
   // invariant: opTab[a] < name < opTab[b]
@@ -1084,6 +1085,7 @@ void Gfx::opLineTo(Object args[], int numArgs) {
     error(getPos(), "No current point in lineto");
     return;
   }
+//  printf("opLineTo(%f,%f,%f,%f)\n", state->getCurX(), state->getCurY(), args[0].getNum(), args[1].getNum());
   state->lineTo(args[0].getNum(), args[1].getNum());
 }
 
@@ -1149,7 +1151,7 @@ void Gfx::opRectangle(Object args[], int numArgs) {
   //cvtUserToDev(x, y,&x3,&y3);
   //cvtUserToDev(x, y,&x4,&y4);
 
-  // printf("opRectangle(%f,%f,%f,%f)\n",x,y,x+w,y+h);
+//  printf("opRectangle(%f,%f,%f,%f)\n",x,y,x+w,y+h);
   state->moveTo(x, y);
   state->lineTo(x + w, y);
   state->lineTo(x + w, y + h);
@@ -3285,6 +3287,9 @@ void Gfx::doForm(Object *str) {
   }
   matrixObj.free();
 
+   // Probably want the regular dict.
+  out->form1(state, str, dict, m, bbox);
+
   // get resources
   dict->lookup("Resources", &resObj);
   resDict = resObj.isDict() ? resObj.getDict() : (Dict *)NULL;
@@ -3447,7 +3452,6 @@ void Gfx::doForm1(Object *str, Dict *resDict, double *matrix, double *bbox) {
   state->lineTo(bbox[0], bbox[3]);
   state->closePath();
   state->clip();
-  out->form1(state, str, resDict, matrix, bbox);
   out->clip(state);
   state->clearPath();
 
