@@ -464,6 +464,8 @@ void HtmlPage::coalesce() {
   curX = str1->xMin; curY = str1->yMin;
   lastX = str1->xMin; lastY = str1->yMin;
 
+  int openSpan = 0;
+
   while (str1 && (str2 = str1->yxNext)) {
     hfont2 = getFont(str2);
     space = str1->yMax - str1->yMin;
@@ -559,19 +561,23 @@ void HtmlPage::coalesce() {
 	  }
 
       }
+
       str1->htext2->append(str2->htext2);
 
       HtmlLink *hlink1 = str1->getLink();
       HtmlLink *hlink2 = str2->getLink();
 
-      GString *fntFix;
-      GString *iStr=GString::fromInt(str2->fontpos);     
-      fntFix = new GString("</span><span class=\"ft");
-      fntFix->append(iStr);
-      fntFix->append("\">");
-      if (((hlink1 == NULL) && (hlink2 == NULL)) && (hfont1->isEqualIgnoreBold(*hfont2) == gFalse))
+
+      if ( 0 &&      ((hlink1 == NULL) && (hlink2 == NULL)) && (hfont1->isEqualIgnoreBold(*hfont2) == gFalse))
       {
-	str1->htext->append(fntFix);
+          GString *fntFix;
+          GString *iStr=GString::fromInt(str2->fontpos);     
+          fntFix = new GString(openSpan ? "</span><span class=\"ft" : "<span class=\"ft");
+          fntFix->append(iStr);
+          fntFix->append("\">");
+
+          str1->htext->append(fntFix);
+          openSpan = 1;
       }
       for (i = 0; i < str2->len; ++i) {
 	str1->text[str1->len] = str2->text[i];
@@ -650,6 +656,9 @@ void HtmlPage::coalesce() {
   if(str1->getLink() != NULL )
     str1->htext->append("</a>");
 
+  if(openSpan)
+      str1->htext->append("</span>");
+
 #if 0 //~ for debugging
   for (str1 = yxStrings; str1; str1 = str1->yxNext) {
     printf("x=%3d..%3d  y=%3d..%3d  size=%2d ",
@@ -704,8 +713,8 @@ void HtmlPage::dumpAsXML(FILE* f, int page){
   for(HtmlString *tmp = yxStrings; tmp ;  tmp = tmp->yxNext){
     if (tmp->htext){
       str=new GString(tmp->htext);
-      fprintf(f,"<text top=\"%d\" left=\"%d\" ",xoutRound(tmp->yMin),xoutRound(tmp->xMin));
-      fprintf(f,"width=\"%d\" height=\"%d\" ",xoutRound(tmp->xMax-tmp->xMin),xoutRound(tmp->yMax-tmp->yMin));
+      fprintf(f,"<text top=\"%d\" left=\"%d\" ", xoutRound(tmp->yMin), xoutRound(tmp->xMin));
+      fprintf(f,"width=\"%d\" height=\"%d\" ", xoutRound(tmp->xMax - tmp->xMin), xoutRound(tmp->yMax - tmp->yMin));
       fprintf(f,"font=\"%d\">", tmp->fontpos);
       if (tmp->fontpos!=-1){
 	str1=fonts->getCSStyle(tmp->fontpos, str);
@@ -717,12 +726,14 @@ void HtmlPage::dumpAsXML(FILE* f, int page){
     }
   }
 
+
   for(int i = 0; i < paths.getLength() ; i++) {
     GfxPath *p = (GfxPath *) paths.get(i);
     int nsubs = p->getNumSubpaths();
 
     if(nsubs > 1) {
       fprintf(f, "<paths n=\"%d\">", nsubs);
+
       for(int j = 0; j < nsubs; j++)
   	  dumpAsXML(f, p->getSubpath(j), true);
       fprintf(f, "</paths>\n");
@@ -778,6 +789,8 @@ void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, bool indent) {
                 x0, y0, x1, y1);    
 
     return;
+  } else  {
+      fprintf(stderr, "forgotten case for GfxSubpath\n");
   }
 
   fprintf(f, "\n   <coords>");
@@ -893,10 +906,10 @@ void HtmlPage::dump(FILE *f, int pageNum)
   }
   else
   {
-    fprintf(f,"<A name=%d></a>",pageNum);
+    fprintf(f,"<a name=%d></a>",pageNum);
     GString* fName=basename(DocName); 
     for (int i=1;i<HtmlOutputDev::imgNum;i++)
-      fprintf(f,"<IMG src=\"%s-%d_%d.jpg\"><br>\n",fName->getCString(),pageNum,i);
+      fprintf(f,"<IMG src=\"%s-%d_%d.jpg\"/><br/>\n",fName->getCString(),pageNum,i);
     HtmlOutputDev::imgNum=1;
     delete fName;
 
@@ -938,11 +951,13 @@ void clear_##T##_GList(GList *_list, int del)       \
 {                                                   \
       int _i;                                       \
       int _n = _list->getLength();                  \
+   fprintf(stderr, "# elements in list %d\n", _list->getLength()); \
       for (_i = 0; _i < _n; ++_i) {                 \
         T * el = (T*)_list->del(_i);                \
         if(del)                                     \
            delete el;                               \
       }                                             \
+ fprintf(stderr, "# elements left in list %d\n", _list->getLength()); \
 }
 
 // instantiate these routines for these two types.
@@ -979,10 +994,9 @@ void HtmlPage::clear() {
   delete links;
   links=new HtmlLinks();
 
+//XXX try to figure out why / if delete the images causes a seg fault
    clear_Image_GList(&images, 0);
-   clear_GfxPath_GList(&images, 0);
-//  clearGList(&images, Image, 1);
-//   clearGList(&paths, GfxPath, 0);
+   clear_GfxPath_GList(&paths, 0);
 
 }
 
@@ -1254,9 +1268,9 @@ void HtmlOutputDev::startPage(int pageNum, GfxState *state) {
     if (fContentsFrame)
 	{
       if (complexMode)
-		fprintf(fContentsFrame,"<A href=\"%s-%d.html\"",str->getCString(),pageNum);
+		fprintf(fContentsFrame,"<a href=\"%s-%d.html\"",str->getCString(),pageNum);
       else 
-		fprintf(fContentsFrame,"<A href=\"%ss.html#%d\"",str->getCString(),pageNum);
+		fprintf(fContentsFrame,"<a href=\"%ss.html#%d\"",str->getCString(),pageNum);
       fprintf(fContentsFrame," target=\"contents\" >Page %d</a><br>\n",pageNum);
     }
   }
@@ -1714,7 +1728,7 @@ GBool HtmlOutputDev::newOutlineLevel(FILE *output, Object *node, Catalog* catalo
   if (node->dictLookup("First", &curr)->isDict()) {
     if (level == 1)
 	{
-		fputs("<A name=\"outline\"></a>", output);
+		fputs("<a name=\"outline\"></a>", output);
 		fputs("<h1>Document Outline</h1>\n", output);
 	}
     fputs("<ul>",output);
@@ -1812,6 +1826,15 @@ void HtmlOutputDev::fill(GfxState *state)
 }
 
 
+void HtmlOutputDev::eoFill(GfxState *state)
+{
+    // just copied from fill() above for now.
+    pages->addFill(state); // eoFill(state);
+}
+
+
+
+
 void HtmlPage::addFill(GfxState *state)
 {
   GfxPath *p = state->getPath()->copy();
@@ -1876,8 +1899,8 @@ void Image::dumpAsXML(FILE *f)
 
 void Image::dumpAsXMLAttributes(FILE *f)
 {
-//    fprintf(f, "x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" ", x, y, width, height);
-    fprintf(f, "x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" ", 0, 0, 0, 0);
+    fprintf(f, "x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" ", x, y, width, height);
+//    fprintf(f, "x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" ", 0, 0, 0, 0);
 }
 
 void NamedImage::dumpAsXMLAttributes(FILE *f)
@@ -1896,17 +1919,22 @@ void NamedImage::dumpAsXMLAttributes(FILE *f)
 }
 
 
-void HtmlOutputDev::form1(GfxState *state, Object *str, Dict *resDict, double *matrix, double *bbox)
+void HtmlOutputDev::form1(GfxState *state, Object *str, Dict *dict, double *matrix, double *bbox)
 {
-    fprintf(stderr, "In HtmlOutputDev::form1\n");
-    Dict *dict = str->streamGetDict();
+//    fprintf(stderr, "In HtmlOutputDev::form1\n");
+//    Dict *dict = str->streamGetDict();
    
-
     Object filename;
     dict->lookup("PTEX.FileName", &filename);
 
     int width = 1, height = 1;
     Image *img;
+    double x1, y1;
+    int curx = state->getCurX(), 
+        cury = state->getCurY();
+    state->transform(curx + bbox[2], cury + bbox[3], &x1, &y1);
+    width = x1 - curx;
+    height = y1 - cury;
     if(filename.isString()) {
         char* fn = filename.getString()->getCString();
         img = new NamedImage(fn, state->getCurX(), state->getCurY(), width, height);
@@ -1920,3 +1948,6 @@ void HtmlOutputDev::form1(GfxState *state, Object *str, Dict *resDict, double *m
     }
     pages->images.append(img);       
 }
+
+
+

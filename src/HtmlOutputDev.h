@@ -184,6 +184,9 @@ public:
 		GfxImageColorMap *colorMap, int *maskColors,
 		GBool inlineImg);
 
+  void eoFill(GfxState *state);
+
+
 private:
   HtmlFont* getFont(HtmlString *hStr) { return fonts->Get(hStr->fontpos); }
 
@@ -331,6 +334,8 @@ public:
   void stroke(GfxState *state);
 
   void form1(GfxState *state, Object *str, Dict *resDict, double *matrix, double *bbox);
+
+  void eoFill(GfxState *state);
 
   // used as a global variable in pdftohtml to control whether we coalesce the strings together across calls.
   static GBool doCoalesce;
