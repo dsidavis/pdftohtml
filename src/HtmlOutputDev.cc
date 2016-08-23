@@ -1974,7 +1974,6 @@ void Image::dumpAsXML(FILE *f)
 void Image::dumpAsXMLAttributes(FILE *f)
 {
     fprintf(f, "x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" ", x, y, width, height);
-//    fprintf(f, "x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" ", 0, 0, 0, 0);
 }
 
 void NamedImage::dumpAsXMLAttributes(FILE *f)
@@ -2044,12 +2043,31 @@ PathStateInfo::PathStateInfo(GfxState *state)
     state->getFillColorSpace()->getRGB(state->getFillColor(), &fill);
     state->getStrokeColorSpace()->getRGB(state->getStrokeColor(), &stroke);
     lineWidth = state->getLineWidth();
+
+    double *dashes;
+    int len;
+    state->getLineDash(&dashes, &len, &start);
+    if(len > 0) {
+       dash = (double *) malloc(sizeof(double) * len);
+       memcpy(dash, dashes, sizeof(double)*len);
+       numDash = len;
+    } else {
+        numDash = 0;
+        dash = NULL;
+    }
 }
 
 
 void 
 PathStateInfo::dumpAsXMLAttrs(FILE *f)
 {
-    fprintf(f, "lineWidth=\"%.3lf\" fill.color=\"%d,%d,%d\"  stroke.color=\"%d,%d,%d\"", 
+    fprintf(f, "lineWidth=\"%.3lf\" fill.color=\"%d,%d,%d\"  stroke.color=\"%d,%d,%d\" ", 
             lineWidth, fill.r, fill.g, fill.b, stroke.r, stroke.g, stroke.b);
+
+    if(numDash > 0 && dash) {
+        fprintf(f, "dashes=\"");
+        for(int i = 0; i < numDash; i++) 
+            fprintf(f, "%.3lf%s", dash[i], (i < (numDash - 1)) ? "," : "");
+        fprintf(f, "\" startDash=\"%.3lf\" ", start);
+    }
 }

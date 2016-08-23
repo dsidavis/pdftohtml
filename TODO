@@ -1,5 +1,7 @@
+Why do we get the rectangle  twice in plot.pdf in  ReadPDF/inst/samples/
+
 Fix the coalesce() routine and the fixFnt and <span/>. 
-  For now it is disabled.
+   For now it is disabled.
    We seem to be adding span elements even when the font isn't changing - it is being set, but still the same.
 
 Fix all the fontspecs in the XML that are the same.
@@ -25,6 +27,9 @@ In sample.pdf created by R, we are getting text elements with a value of q.
 
 
 Get colors and line width, styles, etc of rectangles, lines etc.
+
+  Dashes on lines.
+
   fill and line colors
 
   out device is notified of a change to colors with updateStrokeColor(), updateFillColor().
@@ -33,6 +38,8 @@ Get colors and line width, styles, etc of rectangles, lines etc.
     But with the plot.pdf which has an /sRGB
 
   Stroke versus fill
+
+  
 
   
 

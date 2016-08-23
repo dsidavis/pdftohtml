@@ -243,8 +243,8 @@ protected:
 
 
     double *dash;
-    int *numDash;
-    double *start;
+    int numDash;
+    double start;
 };
 
 
