@@ -729,22 +729,23 @@ void HtmlPage::dumpAsXML(FILE* f, int page){
 
   for(int i = 0; i < paths.getLength() ; i++) {
     GfxPath *p = (GfxPath *) paths.get(i);
+    PathStateInfo *info = (PathStateInfo *) pathsInfo.get(i);
     int nsubs = p->getNumSubpaths();
 
     if(nsubs > 1) {
       fprintf(f, "<paths n=\"%d\">", nsubs);
 
       for(int j = 0; j < nsubs; j++)
-  	  dumpAsXML(f, p->getSubpath(j), true);
+  	  dumpAsXML(f, p->getSubpath(j), NULL, true);
       fprintf(f, "</paths>\n");
     } else
-      dumpAsXML(f, p->getSubpath(0), false);
+        dumpAsXML(f, p->getSubpath(0), info, false);
   }
 
   fputs("</page>\n",f);
 }
 
-void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, bool indent) {
+void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, PathStateInfo *info, bool indent) {
   int n = sp->getNumPoints();
  
   if(n == 5) {
@@ -767,9 +768,13 @@ void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, bool indent) {
         p0 = (x, y),   p1 = (x+w, y)
 
 */
-        fprintf(f, "%s<rect bbox=\"%.3lf,%.3lf,%.3lf,%.3lf\" />\n", 
+        fprintf(f, "%s<rect bbox=\"%.3lf,%.3lf,%.3lf,%.3lf\" ", 
                       indent ? "\n   " : "",
                 x0, y0, x2, y2);
+
+        info->dumpAsXMLAttrs(f);
+
+        fprintf(f, "/>\n");
 #else
       fprintf(f, "%s<rect>", indent ? "\n   " : "");
       for(int i = 0; i < 4; i++)
@@ -784,9 +789,13 @@ void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, bool indent) {
     double x1 = sp->getX(1);
     double y0 = sp->getY(0);
     double y1 = sp->getY(1);
-    fprintf(f, "%s<line bbox=\"%.3lf,%.3lf,%.3lf,%.3lf\" />\n", 
+    fprintf(f, "%s<line bbox=\"%.3lf,%.3lf,%.3lf,%.3lf\" ", 
                       indent ? "\n   " : "",
                 x0, y0, x1, y1);    
+
+    info->dumpAsXMLAttrs(f);
+
+    fprintf(f, " />\n");
 
     return;
   } else  {
@@ -951,13 +960,11 @@ void clear_##T##_GList(GList *_list, int del)       \
 {                                                   \
       int _i;                                       \
       int _n = _list->getLength();                  \
-   fprintf(stderr, "# elements in list %d\n", _list->getLength()); \
       for (_i = 0; _i < _n; ++_i) {                 \
         T * el = (T*)_list->del(_i);                \
         if(del)                                     \
            delete el;                               \
       }                                             \
- fprintf(stderr, "# elements left in list %d\n", _list->getLength()); \
 }
 
 // instantiate these routines for these two types.
@@ -1834,14 +1841,81 @@ void HtmlOutputDev::eoFill(GfxState *state)
 
 
 
+void
+showColorSpaceInfo(GfxColorSpace *colsp, GfxState *state, int isfill = 1)
+{
+  GfxGray gray;
+  GfxRGB rgb;
+  GfxColor *col;
+  int n = colsp->getNComps();
+  fprintf(stderr, "color space: mode = %s, ncomps = %d\n", GfxColorSpace::getColorSpaceModeName(colsp->getMode()), n);
+
+  switch(colsp->getMode()) {
+  case csDeviceGray:
+      if(isfill) {
+          state->getFillGray(&gray);
+          fprintf(stderr, "gray = %d\n", gray);
+      } else {
+          state->getStrokeGray(&gray);
+          fprintf(stderr, "gray = %d\n", gray);
+      }
+      break;
+  case csDeviceRGB:
+      if(isfill) {
+          state->getFillRGB(&rgb);
+          fprintf(stderr, "rgb = %d, %d, %d\n", rgb.r, rgb.g, rgb.b);
+      } else {
+          state->getStrokeRGB(&rgb);
+          fprintf(stderr, "rgb = %d, %d, %d\n", rgb.r, rgb.g, rgb.b);
+      }
+      break;
+  case  csCalRGB:
+      if(isfill) {
+          state->getFillRGB(&rgb);
+          fprintf(stderr, "calrgb = %d, %d, %d\n", rgb.r, rgb.g, rgb.b);
+      } else {
+          state->getStrokeRGB(&rgb);
+          fprintf(stderr, "calrgb = %d, %d, %d\n", rgb.r, rgb.g, rgb.b);
+      }
+      break;
+  case csDeviceCMYK:
+      break;
+  case csICCBased:
+  {
+      GfxColor col;
+      GfxRGB rgb;
+      ((GfxICCBasedColorSpace *)colsp)->getRGB(isfill ? state->getFillColor() : state->getStrokeColor(),  &rgb);
+      fprintf(stderr, "icc: rgb = %d, %d, %d\n", rgb.r, rgb.g, rgb.b);
+//      for(int i = 0; i < n; i++) {     }
+  }       
+      break;
+  default:
+      break;
+  }
+}
+
+
+
 
 void HtmlPage::addFill(GfxState *state)
 {
+
+#if 0
+  GfxColorSpace *colsp;
+  fprintf(stderr, "addFill\n");
+  colsp = state->getFillColorSpace();
+  showColorSpaceInfo(colsp, state, 1);
+  colsp = state->getStrokeColorSpace();
+  showColorSpaceInfo(colsp, state, 0);
+#endif
+
   GfxPath *p = state->getPath()->copy();
-  // transform
+  // transform the coordinates to global page coordinates
   transformPath(p, state);
   paths.append(p);
+  pathsInfo.append(new PathStateInfo(state));
 }
+
 
 void 
 HtmlPage::transformPath(GfxPath *p, GfxState *state)
@@ -1951,3 +2025,31 @@ void HtmlOutputDev::form1(GfxState *state, Object *str, Dict *dict, double *matr
 
 
 
+void HtmlOutputDev::updateFillColorSpace(GfxState *state)
+{
+//    fprintf(stderr, "switching fill color space to %s\n", GfxColorSpace::getColorSpaceModeName(state->getFillColorSpace()->getMode()));
+}
+
+void HtmlOutputDev::updateStrokeColorSpace(GfxState *state)
+{
+//    fprintf(stderr, "switching stroke color space to %s\n", GfxColorSpace::getColorSpaceModeName(state->getStrokeColorSpace()->getMode()));
+}
+
+
+
+
+
+PathStateInfo::PathStateInfo(GfxState *state)
+{
+    state->getFillColorSpace()->getRGB(state->getFillColor(), &fill);
+    state->getStrokeColorSpace()->getRGB(state->getStrokeColor(), &stroke);
+    lineWidth = state->getLineWidth();
+}
+
+
+void 
+PathStateInfo::dumpAsXMLAttrs(FILE *f)
+{
+    fprintf(f, "lineWidth=\"%.3lf\" fill.color=\"%d,%d,%d\"  stroke.color=\"%d,%d,%d\"", 
+            lineWidth, fill.r, fill.g, fill.b, stroke.r, stroke.g, stroke.b);
+}

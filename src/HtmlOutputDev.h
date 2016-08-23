@@ -40,6 +40,8 @@
 
 class GfxState;
 class GString;
+
+class PathStateInfo;
 //------------------------------------------------------------------------
 // HtmlString
 //------------------------------------------------------------------------
@@ -173,7 +175,7 @@ public:
 
 
   void addFill(GfxState *state);
-  void dumpAsXML(FILE *f, GfxSubpath *sp, bool indent = false);
+  void dumpAsXML(FILE *f, GfxSubpath *sp, PathStateInfo *, bool indent = false);
   void dumpImagesAsXML(FILE* f);
 
   void transformPath(GfxSubpath *sp, GfxState *state);
@@ -220,6 +222,7 @@ private:
 
   double rotation;
   GList paths;
+  GList pathsInfo;
   GList images;
 
   friend class HtmlOutputDev;
@@ -227,6 +230,23 @@ private:
  public:
   int debug;
 };
+
+class PathStateInfo {
+public:
+    PathStateInfo(GfxState *);
+    void dumpAsXMLAttrs(FILE *f);
+
+protected:
+    GfxRGB fill;
+    GfxRGB stroke;
+    double lineWidth;
+
+
+    double *dash;
+    int *numDash;
+    double *start;
+};
+
 
 //------------------------------------------------------------------------
 // HtmlMetaVar
@@ -339,6 +359,10 @@ public:
 
   // used as a global variable in pdftohtml to control whether we coalesce the strings together across calls.
   static GBool doCoalesce;
+
+
+  void updateFillColorSpace(GfxState *state);
+  void updateStrokeColorSpace(GfxState *state);
 
 private:
   // convert encoding into a HTML standard, or encoding->getCString if not

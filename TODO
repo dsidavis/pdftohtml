@@ -27,6 +27,15 @@ In sample.pdf created by R, we are getting text elements with a value of q.
 Get colors and line width, styles, etc of rectangles, lines etc.
   fill and line colors
 
+  out device is notified of a change to colors with updateStrokeColor(), updateFillColor().
+  Doesn't say which type of color it is. 
+    The GfxColorSpace has a getMode() and this tells us what it is. We can even get the name.
+    But with the plot.pdf which has an /sRGB
+
+  Stroke versus fill
+
+  
+
 --------------------
 
 [done] Add the rotation to each <page>.
