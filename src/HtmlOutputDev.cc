@@ -691,7 +691,14 @@ void HtmlPage::dumpLinksAsXML(FILE* f)
 //    while(l) {
     for(i = 0 ; i < links->getNumLinks(); i++) {
         l = links->getLink(i);
-        fprintf(f, "<ulink url=\"%s\" x1=\"%.3lf\" y1=\"%.3lf\" x2=\"%.3lf\"  y2=\"%.3lf\" />\n", l->getDest()->getCString(), l->getX1(), l->getY1(), l->getX2(), l->getY2());
+        char *str = l->getDest()->getCString();
+        fprintf(f, "<ulink url=\"");
+        for(int j = 0; j < strlen(str); j++) {
+            fprintf(f, "%c", str[j]);
+            if(str[j] == '&')
+               fprintf(f, "amp;");
+        }
+        fprintf(f, "\" x1=\"%.3lf\" y1=\"%.3lf\" x2=\"%.3lf\"  y2=\"%.3lf\" />\n", l->getX1(), l->getY1(), l->getX2(), l->getY2());
     }
 }
 
@@ -719,7 +726,12 @@ void HtmlPage::dumpAsXML(FILE* f, int page){
       if (tmp->fontpos!=-1){
 	str1=fonts->getCSStyle(tmp->fontpos, str);
       }
-      fputs(str1->getCString(),f);
+      const char *xstr = str1->getCString();
+      for(int j = 0; j < strlen(xstr); j++) {
+          fprintf(f, "%c", xstr[j]);    //fputs(str,f);
+          if(xstr[j] == '&')
+              fputs("amp;", f);
+      }
       delete str;
       delete str1;
       fputs("</text>\n",f);
@@ -799,7 +811,7 @@ void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, PathStateInfo *info, bool inde
 
     return;
   } else  {
-      fprintf(stderr, "forgotten case for GfxSubpath\n");
+      fprintf(stderr, "forgotten case for GfxSubpath numPoints = %d\n", n);
   }
 
   fprintf(f, "\n   <coords>");
@@ -1157,7 +1169,7 @@ HtmlOutputDev::HtmlOutputDev(char *fileName, char *title,
   	if (doOutline)
 	{
 		GString *str = basename(Docname);
-		fprintf(fContentsFrame, "<A href=\"%s%s\" target=\"contents\">Outline</a><br>", str->getCString(), complexMode ? "-outline.html" : "s.html#outline");
+		fprintf(fContentsFrame, "<a href=\"%s%s\" target=\"contents\">Outline</a><br>", str->getCString(), complexMode ? "-outline.html" : "s.html#outline");
 		delete str;
 	}
   	
@@ -1797,10 +1809,10 @@ GBool HtmlOutputDev::newOutlineLevel(FILE *output, Object *node, Catalog* catalo
 
       fputs("<li>",output);
       if (linkName)
-		fprintf(output,"<A href=\"%s\">", linkName->getCString());
+		fprintf(output,"<a href=\"%s\">", linkName->getCString());
       fputs(titleStr->getCString(),output);
       if (linkName) {
-		fputs("</A>",output);
+		fputs("</a>",output);
 		delete linkName;
       }
       fputs("\n",output);
