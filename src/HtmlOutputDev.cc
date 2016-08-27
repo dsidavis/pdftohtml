@@ -784,14 +784,15 @@ void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, PathStateInfo *info, bool inde
                       indent ? "\n   " : "",
                 x0, y0, x2, y2);
 
-        info->dumpAsXMLAttrs(f);
+        if(info)
+            info->dumpAsXMLAttrs(f);
 
         fprintf(f, "/>\n");
 #else
       fprintf(f, "%s<rect>", indent ? "\n   " : "");
       for(int i = 0; i < 4; i++)
   	  fprintf(f, "%.3lf %3.lf%s", sp->getX(i), sp->getY(i), i < 3 ? " " : "");
-      fprintf(f, "</rect>\n");
+      fprintf(f, "</rect>");
 #endif
       return;
     }
@@ -805,14 +806,23 @@ void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, PathStateInfo *info, bool inde
                       indent ? "\n   " : "",
                 x0, y0, x1, y1);    
 
-    info->dumpAsXMLAttrs(f);
+    if(info)
+        info->dumpAsXMLAttrs(f);
 
     fprintf(f, " />\n");
 
     return;
-  } else  {
-      fprintf(stderr, "forgotten case for GfxSubpath numPoints = %d\n", n);
   }
+#if 0
+   else  {
+//      fprintf(stderr, "forgotten case for GfxSubpath numPoints = %d\n", n);
+      fprintf(f, "<path numPoints=\"%d\"", n);
+      for(int i = 0; i < n; i++)
+          fprintf(f, " x%d=\"%.3lf\" y%d=\"%.3lf\"", i, sp->getX(i), i, sp->getY(i));
+      fputs(" />", f);
+
+  }
+#endif
 
   fprintf(f, "\n   <coords>");
 
