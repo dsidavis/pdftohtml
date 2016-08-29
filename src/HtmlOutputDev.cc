@@ -760,7 +760,7 @@ void HtmlPage::dumpAsXML(FILE* f, int page){
 void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, PathStateInfo *info, bool indent) {
   int n = sp->getNumPoints();
  
-  if(n == 5) {
+  if(n == 4 || n == 5) {
     // check to see if we have a rectangle.
 
     double x0 = sp->getX(0);
@@ -771,7 +771,11 @@ void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, PathStateInfo *info, bool inde
     double y3 = sp->getY(3);
     double y1 = sp->getY(1);
     double y2 = sp->getY(2);
-    if(x0 == x3 && x1 == x2 && y0 == y1 && y2 == y3) {
+    double x4 = n == 5 ? sp->getX(4) : x0;
+    double y4 = n == 5 ? sp->getY(4) : y0;
+
+    if( (x0 == x3 && x1 == x2 && y0 == y1 && y2 == y3 && x0 == x4 && y0 == y4) || 
+        (x0 == x1 && x2 == x3 && y1 == y2 && y0 == y4 && x0 == x4 && y0 == y4)) {
 #if 1
 /* From Gfx.cc::opRectangle.   
 
@@ -824,7 +828,7 @@ void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, PathStateInfo *info, bool inde
   }
 #endif
 
-  fprintf(f, "\n   <coords>");
+  fprintf(f, "\n   <coords numPoints=\"%d\">", n);
 
   for(int i = 0; i < n ; i++) 
     fprintf(f, "\n      <coord>%0.3lf %0.3lf</coord>", sp->getX(i),  sp->getY(i));
