@@ -347,6 +347,12 @@ GString* HtmlFontAccu::CSStyle(int i){
      tmp->append(fontName); //font.getFontName());
      tmp->append("\" color=\"");
      tmp->append(colorStr);
+     tmp->append("\" isItalic=\"");
+     tmp->append(font.isItalic() ? "1" : "0");
+     tmp->append("\"  isBold=\"");
+     tmp->append(font.isBold() ? "1" : "0");
+     tmp->append("\"  isOblique=\"");
+     tmp->append(font.isOblique() ? "1" : "0");
      tmp->append("\"/>");
    }
 
