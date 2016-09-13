@@ -1,11 +1,13 @@
+Have the coalesce respect changes in fonts, colors, etc.!
+
 Why do we get the rectangle  twice in plot.pdf in  ReadPDF/inst/samples/
 
 Fix the coalesce() routine and the fixFnt and <span/>. 
    For now it is disabled.
    We seem to be adding span elements even when the font isn't changing - it is being set, but still the same.
 
-Fix all the fontspecs in the XML that are the same.
-
+[check] Fix all the fontspecs in the XML that are the same.
+  There is extra information about italic, bold, oblique,  that we weren't emitting and so they may well have been unique.
 
 Info about Images
   Get the correct x, y, width and height for PDF images.
@@ -26,7 +28,7 @@ In sample.pdf created by R, we are getting text elements with a value of q.
    Can we do better?
 
 
-Get colors and line width, styles, etc of rectangles, lines etc.
+[check] Get colors and line width, styles, etc of rectangles, lines etc.
 
   Dashes on lines.
 
