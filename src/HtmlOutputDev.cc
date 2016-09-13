@@ -87,7 +87,10 @@ HtmlString::HtmlString(GfxState *state, double fontSize, double _charspace, Html
     GString *name = state->getFont()->getName();
     if (!name) name = HtmlFont::getDefaultFont(); //new GString("default");
    // HtmlFont hfont=HtmlFont(name, static_cast<int>(fontSize-1),_charspace, rgb);
-    HtmlFont hfont=HtmlFont(name, static_cast<int>(fontSize-1),0.0, rgb);
+    HtmlFont hfont = HtmlFont(name, static_cast<int>(fontSize-1),0.0, rgb);
+    hfont.isItalic(font->isItalic());
+    hfont.isBold(font->isBold());
+//    hfont.isOblique(font->isOblique());
     fontpos = fonts->AddFont(hfont);
   } else {
     // this means that the PDF file draws text without a current font,
@@ -195,10 +198,12 @@ void HtmlPage::updateFont(GfxState *state) {
   char *name;
   int code;
   double w;
+
   
   // adjust the font size
   fontSize = state->getTransformedFontSize();
-  if ((font = state->getFont()) && font->getType() == fontType3) {
+  font = state->getFont();
+  if (font && font->getType() == fontType3) {
     // This is a hack which makes it possible to deal with some Type 3
     // fonts.  The problem is that it's impossible to know what the
     // base coordinate system used in the font is without actually
@@ -399,9 +404,9 @@ void HtmlPage::coalesce() {
 
 #if 0 //~ for debugging
   for (str1 = yxStrings; str1; str1 = str1->yxNext) {
-    printf("x=%f..%f  y=%f..%f  size=%2d '",
+    printf("x=%f..%f  y=%f..%f  size=%2d fontpos=%d '",
 	   str1->xMin, str1->xMax, str1->yMin, str1->yMax,
-	   (int)(str1->yMax - str1->yMin));
+	   (int)(str1->yMax - str1->yMin), str1->fontpos);
     for (i = 0; i < str1->len; ++i) {
       fputc(str1->text[i] & 0xff, stdout);
     }
@@ -434,7 +439,7 @@ void HtmlPage::coalesce() {
 				fabs(str3->xMax - str1->xMax) < size * 0.2)
 			{
 				found = gTrue;
-				//printf("found duplicate!\n");
+				//fprintf(stderr, "found duplicate!\n");
 				break;
 			}
 		}
@@ -501,6 +506,7 @@ void HtmlPage::coalesce() {
 	) &&
  // in complex mode fonts must be the same, in other modes fonts do not metter
 	str1->dir == str2->dir // text direction the same
+        && str2->fontpos == str1->fontpos
        ) 
     {
      diff = str2->xMax - str1->xMin;
@@ -613,7 +619,7 @@ void HtmlPage::coalesce() {
       delete newfnt;
       hfont1 = getFont(str1);
       // we have to reget hfont2 because it's location could have
-      // changed on resize  GStri;ng *iStr=GString::fromInt(i);
+      // changed on resize  GString *iStr=GString::fromInt(i);
       hfont2 = getFont(str2); 
 
       hfont1 = hfont2;
