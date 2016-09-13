@@ -103,7 +103,8 @@ static GBool grabArg(ArgDesc *arg, int i, int *argc, char *argv[]) {
   n = 0;
   switch (arg->kind) {
   case argFlag:
-    *(GBool *)arg->val = gTrue;
+      // toggle the current value.
+    *(GBool *)arg->val = (*(GBool *)arg->val) ? gFalse : gTrue; //gTrue;
     n = 1;
     break;
   case argInt:
