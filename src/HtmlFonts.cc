@@ -158,13 +158,20 @@ void HtmlFont::clear(){
 
 
 /*
-  This function is used to compare font uniquily for insertion into
+  This function is used to compare font uniquely for insertion into
   the list of all encountered fonts
 */
 GBool HtmlFont::isEqual(const HtmlFont& x) const{
-  return ((size==x.size) && (lineSize==x.lineSize) && (charspace==x.charspace) &&
-	  (pos==x.pos) && (bold==x.bold) && (oblique==x.oblique) && (italic==x.italic) &&
-	  (color.isEqual(x.getColor())));
+  return ((size == x.size) && 
+//          (lineSize == x.lineSize) && 
+//          (charspace == x.charspace) &&
+	  (pos == x.pos) && 
+          (bold == x.bold) && 
+          (oblique == x.oblique) && 
+          (italic == x.italic) &&
+	  (color.isEqual(x.getColor())) &&
+          FontName->cmp(x.FontName) == 0
+         );
 }
 
 /*
@@ -262,7 +269,6 @@ int HtmlFontAccu::AddFont(const HtmlFont& font){
 		return (int)(i-(accu->begin()));
 	}
  }
-
  accu->push_back(font);
  return (accu->size()-1);
 }
@@ -353,6 +359,8 @@ GString* HtmlFontAccu::CSStyle(int i){
      tmp->append(font.isBold() ? "1" : "0");
      tmp->append("\"  isOblique=\"");
      tmp->append(font.isOblique() ? "1" : "0");
+     tmp->append("\"  name=\"");
+     tmp->append(font.getFullName());
      tmp->append("\"/>");
    }
 
