@@ -53,6 +53,9 @@ public:
    static void clear();
    GString* getFullName();
    GBool isItalic() const {return italic;}
+   GBool isItalic(GBool val) {italic = val; return italic;}
+   GBool isBold(GBool val) {bold = val; return val;}
+   GBool isOblique(GBool val) {oblique = val; return val;}
    GBool isBold() const {return bold;}
    GBool isOblique() const {return oblique;}
    unsigned int getSize() const {return size;}
