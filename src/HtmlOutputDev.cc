@@ -1133,13 +1133,17 @@ void HtmlOutputDev::doFrame(int firstPage){
   fclose(fContentsFrame);  
 }
 
-HtmlOutputDev::HtmlOutputDev(char *fileName, char *title, 
+#include <time.h>
+#include <sys/stat.h>
+
+HtmlOutputDev::HtmlOutputDev(char *pdfFileName, char *fileName, char *title, 
 	char *author, char *keywords, char *subject, char *date,
 	char *extension,
 	GBool rawOrder, int firstPage, GBool outline) 
 {
   char *htmlEncoding;
   
+  filename(fileName);
   fContentsFrame = NULL;
   docTitle = new GString(title);
   pages = NULL;
@@ -1230,6 +1234,18 @@ HtmlOutputDev::HtmlOutputDev(char *fileName, char *title,
       fprintf(page, "<?xml version=\"1.0\" encoding=\"%s\"?>\n", htmlEncoding);
       fputs("<!DOCTYPE pdf2xml SYSTEM \"pdf2xml.dtd\">\n\n", page);
       fputs("<pdf2xml>\n",page);
+      fputs("  <docinfo>\n", page);
+      if(filename())
+          fprintf(page, "    <filename>%s</filename>\n", pdfFileName);
+      time_t tm = time(NULL);
+      char *str = ctime(&tm);
+      str[strlen(str)-1] = '\0';
+      fprintf(page, "   <date>%s</date>\n", str);
+
+      struct stat st; 
+      if(stat(pdfFileName, &st) == 0)
+          fprintf(page, "   <filesize>%lld</filesize>\n",  st.st_size);
+      fputs("  </docinfo>\n", page);
     } 
     else 
     {

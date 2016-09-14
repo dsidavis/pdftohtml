@@ -277,7 +277,7 @@ public:
   // 8-bit ISO Latin-1.  <useASCII7> should also be set for Japanese
   // (EUC-JP) text.  If <rawOrder> is true, the text is kept in content
   // stream order.
-  HtmlOutputDev(char *fileName, char *title, 
+    HtmlOutputDev(char *pdfFilename, char *fileName, char *title, 
 	  char *author,
 	  char *keywords,
 	  char *subject,
@@ -363,6 +363,9 @@ public:
 
   void updateFillColorSpace(GfxState *state);
   void updateStrokeColorSpace(GfxState *state);
+  
+  const char *filename() const { return _filename;}
+  const char *filename(const char *fn)  { _filename = fn; return _filename;}
 
 private:
   // convert encoding into a HTML standard, or encoding->getCString if not
@@ -392,6 +395,8 @@ private:
   GList *glMetaVars;
 
   GfxState *state;
+
+  const char *_filename;
 
   friend class HtmlPage;
 };

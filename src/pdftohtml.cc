@@ -263,7 +263,7 @@ int main(int argc, char *argv[]) {
   rawOrder = complexMode; // todo: figure out what exactly rawOrder do :)
 
   // write text file
-  htmlOut = new HtmlOutputDev(htmlFileName->getCString(), 
+  htmlOut = new HtmlOutputDev(argv[1], htmlFileName->getCString(), 
 	  docTitle->getCString(), 
 	  author ? author->getCString() : NULL,
 	  keywords ? keywords->getCString() : NULL, 
@@ -273,6 +273,7 @@ int main(int argc, char *argv[]) {
 	  rawOrder, 
 	  firstPage,
 	  doc->getCatalog()->getOutline()->isDict());
+  fprintf(stderr, "file name = %s, %s\n", argv[1], htmlOut->filename());
   delete docTitle;
   if( author )
   {   
