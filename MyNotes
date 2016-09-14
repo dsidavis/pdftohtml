@@ -1,3 +1,6 @@
+How are the flags being set so that isItalic()  on a GfxFont returns true.
+
+
 HtmlPage::addChar() was starting a new string when it encountered a space.
     Undone this.
 

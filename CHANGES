@@ -102,3 +102,11 @@ pdftohtml 0.40
 -updated Xpdf to 3.01p2
 -improved the output of complex mode documents
 -fixed links, Thay should not include text that should not be part of the link anymore.
+pdftohtml 0.50
+=====================
+Many changes
+- -coalesce flag to control whether coalesce()ing text strings is done.
+- toggle flag values
+- output more font details in XML
+
+
