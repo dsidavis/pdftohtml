@@ -1240,11 +1240,11 @@ HtmlOutputDev::HtmlOutputDev(char *pdfFileName, char *fileName, char *title,
       time_t tm = time(NULL);
       char *str = ctime(&tm);
       str[strlen(str)-1] = '\0';
-      fprintf(page, "   <date>%s</date>\n", str);
+      fprintf(page, "     <date>%s</date>\n", str);
 
       struct stat st; 
       if(stat(pdfFileName, &st) == 0)
-          fprintf(page, "   <filesize>%lld</filesize>\n",  st.st_size);
+          fprintf(page, "     <filesize>%lld</filesize>\n",  st.st_size);
       fputs("  </docinfo>\n", page);
     } 
     else 
