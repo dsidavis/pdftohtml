@@ -275,7 +275,7 @@ int main(int argc, char *argv[]) {
 	  rawOrder, 
 	  firstPage,
 	  doc->getCatalog()->getOutline()->isDict());
-//  fprintf(stderr, "file name = %s, %s\n", argv[1], htmlOut->filename());
+
   delete docTitle;
   if( author )
   {   
