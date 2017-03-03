@@ -345,6 +345,7 @@ GString* HtmlFontAccu::CSStyle(int i){
      
    }
    if (xml) {
+     GString *fontFullName = font.getFullName();
      tmp->append("<fontspec id=\"");
      tmp->append(iStr);
      tmp->append("\" size=\"");
@@ -360,8 +361,9 @@ GString* HtmlFontAccu::CSStyle(int i){
      tmp->append("\"  isOblique=\"");
      tmp->append(font.isOblique() ? "1" : "0");
      tmp->append("\"  name=\"");
-     tmp->append(font.getFullName());
+     tmp->append(fontFullName);
      tmp->append("\"/>");
+     delete fontFullName;
    }
 
    delete fontName;
