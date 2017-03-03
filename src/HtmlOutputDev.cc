@@ -115,8 +115,8 @@ HtmlString::HtmlString(GfxState *state, double fontSize, double _charspace, Html
   yxNext = NULL;
   xyNext = NULL;
   strSize = 0;
-  htext=new GString();
-  htext2=new GString();
+  htext = new GString();
+  htext2 = new GString();
   dir = textDirUnknown;
 }
 
@@ -233,7 +233,8 @@ void HtmlPage::updateFont(GfxState *state) {
 }
 
 void HtmlPage::beginString(GfxState *state, GString *s) {
-  curStr = new HtmlString(state, fontSize,charspace, fonts);
+//???  s is never ysed here.
+  curStr = new HtmlString(state, fontSize, charspace, fonts);
 }
 
 void HtmlPage::showStrings() {
@@ -699,7 +700,8 @@ void HtmlPage::dumpLinksAsXML(FILE* f)
 //    while(l) {
     for(i = 0 ; i < links->getNumLinks(); i++) {
         l = links->getLink(i);
-        char *str = l->getDest()->getCString();
+        GString *lstr = l->getDest();
+        char *str = lstr->getCString();
         fprintf(f, "<ulink url=\"");
         for(int j = 0; j < strlen(str); j++) {
             fprintf(f, "%c", str[j]);
@@ -707,6 +709,7 @@ void HtmlPage::dumpLinksAsXML(FILE* f)
                fprintf(f, "amp;");
         }
         fprintf(f, "\" x1=\"%.3lf\" y1=\"%.3lf\" x2=\"%.3lf\"  y2=\"%.3lf\" />\n", l->getX1(), l->getY1(), l->getX2(), l->getY2());
+        delete lstr;
     }
 }
 
@@ -2140,8 +2143,8 @@ PathStateInfo::PathStateInfo(GfxState *state)
        memcpy(dash, dashes, sizeof(double)*len);
        numDash = len;
     } else {
-        numDash = 0;
-        dash = NULL;
+       numDash = 0;
+       dash = NULL;
     }
 }
 
