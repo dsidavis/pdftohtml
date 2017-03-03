@@ -236,6 +236,13 @@ public:
     PathStateInfo(GfxState *);
     void dumpAsXMLAttrs(FILE *f);
 
+    ~PathStateInfo() {
+	if(dash) { 
+          free(dash);
+	  dash = NULL;
+	}
+    }
+
 protected:
     GfxRGB fill;
     GfxRGB stroke;
