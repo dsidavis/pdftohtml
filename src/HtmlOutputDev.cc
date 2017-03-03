@@ -48,6 +48,8 @@ extern GBool noMerge;
 
 
 GBool HtmlOutputDev::doCoalesce = true;
+GBool HtmlOutputDev::outputPaths = true;
+GBool HtmlOutputDev::outputImages = true;
 
 
 static GString* basename(GString* str){
@@ -992,7 +994,7 @@ void clear_##T##_GList(GList *_list, int del)       \
 {                                                   \
       int _i;                                       \
       int _n = _list->getLength();                  \
-      for (_i = 0; _i < _n; ++_i) {                 \
+      for (_i = _n - 1; _i >= 0; --_i) {                 \
         T * el = (T*)_list->del(_i);                \
         if(del)                                     \
            delete el;                               \
@@ -1002,6 +1004,7 @@ void clear_##T##_GList(GList *_list, int del)       \
 // instantiate these routines for these two types.
 clearGList(Image)
 clearGList(GfxPath)
+clearGList(PathStateInfo)
 
 
 void HtmlPage::clear() {
@@ -1035,6 +1038,7 @@ void HtmlPage::clear() {
 
 //XXX try to figure out why / if delete the images causes a seg fault
    clear_Image_GList(&images, 0);
+   clear_PathStateInfo_GList(&pathsInfo, 0);
    clear_GfxPath_GList(&paths, 0);
 
 }
@@ -1648,7 +1652,7 @@ GString* HtmlOutputDev::getLinkDest(Link *link,Catalog* catalog){
 		}
 	      }
 
-	      if (printCommands) printf(" link to page %d ",page);
+	      if (printCommands) printf(" link to page %d \n",page);
 	      delete str;
 	      return file;
 	  }
@@ -1672,7 +1676,7 @@ GString* HtmlOutputDev::getLinkDest(Link *link,Catalog* catalog){
 	      if (!(dest->isPageRef()))  page=dest->getPageNum();
 	      delete dest;
 
-	      if (printCommands) printf(" link to page %d ",page);
+	      if (printCommands) printf(" link to page %d \n",page);
 	      if (printHtml){
 		  p=file->getCString()+file->getLength()-4;
 		  if (!strcmp(p, ".pdf") || !strcmp(p, ".PDF")){
@@ -1947,7 +1951,9 @@ showColorSpaceInfo(GfxColorSpace *colsp, GfxState *state, int isfill = 1)
 
 void HtmlPage::addFill(GfxState *state)
 {
-
+    if(!HtmlOutputDev::outputPaths)
+        return;
+    
 #if 0
   GfxColorSpace *colsp;
   fprintf(stderr, "addFill\n");
@@ -2000,6 +2006,10 @@ void HtmlPage::AddImage(GfxState *state, Object *ref, Stream *str,
                         GfxImageColorMap *colorMap, int *maskColors,
                         GBool inlineImg)
 {
+
+    if(!HtmlOutputDev::outputImages)
+        return;
+
 // Can we get information out of the ref?
 // do we need to transform? Probably.
 
@@ -2033,8 +2043,37 @@ void NamedImage::dumpAsXMLAttributes(FILE *f)
         for(i = 0; i < n ; i++) {
             Object val;
             propsDict->getVal(i, &val);
-            char *str = val.getString()->getCString();
-            fprintf(f, "%s=\"%s\" ", propsDict->getKey(i), str);
+            fprintf(f, "%s=\"", propsDict->getKey(i));
+            switch(val.getType()) {
+                case objBool:
+                   fprintf(f, "%d", val.getBool());
+                   break;
+                case objInt:
+                   fprintf(f, "%d", val.getInt());
+                   break;
+                case objReal:
+                   fprintf(f, "%lf", val.getNum());
+                   break;
+                case objName:
+                   fprintf(f, "%s", val.getName());
+                   break;
+                case objCmd:
+                   fprintf(f, "%s", val.getCmd());
+                   break;
+                case objString:
+                   fprintf(f, "%s", val.getString()->getCString());
+                   break;
+                case objNull:
+                   fprintf(f, "null");
+                   break;
+                case objNone:
+                   fprintf(f, "none");
+                   break;
+                default:
+                   fprintf(f, "???? fix me in HtmlOutputDev.cc");
+            }
+
+            fprintf(f, "\" ");
         }
     }
 }
