@@ -359,6 +359,8 @@ public:
 
   // used as a global variable in pdftohtml to control whether we coalesce the strings together across calls.
   static GBool doCoalesce;
+  static GBool outputPaths;
+  static GBool outputImages;
 
 
   void updateFillColorSpace(GfxState *state);
