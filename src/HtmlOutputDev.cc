@@ -1034,12 +1034,13 @@ void HtmlPage::clear() {
   }
 
   delete links;
-  links=new HtmlLinks();
+  links = new HtmlLinks();
 
-//XXX try to figure out why / if delete the images causes a seg fault
-   clear_Image_GList(&images, 0);
-   clear_PathStateInfo_GList(&pathsInfo, 0);
-   clear_GfxPath_GList(&paths, 0);
+// try to figure out why / if delete the images causes a seg fault
+// Seems to work now that we go from the end of the list to the start.
+   clear_Image_GList(&images, 1);
+   clear_PathStateInfo_GList(&pathsInfo, 1);
+   clear_GfxPath_GList(&paths, 1);
 
 }
 
