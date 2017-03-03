@@ -2596,7 +2596,9 @@ void Gfx::opShowText(Object args[], int numArgs) {
     fontChanged = gFalse;
   }
   out->beginStringOp(state);
-  doShowText(args[0].getString());
+  GString *str = args[0].getString();
+  doShowText(str);
+//XXX  delete str;
   out->endStringOp(state);
 }
 
@@ -2675,7 +2677,8 @@ void Gfx::opShowSpaceText(Object args[], int numArgs) {
       }
       out->updateTextShift(state, obj.getNum());
     } else if (obj.isString()) {
-      doShowText(obj.getString());
+        // obj.getString() doesn't allocate the string.
+        doShowText(obj.getString());
     } else {
       error(getPos(), "Element of show/space array must be number or string");
     }
