@@ -104,6 +104,8 @@ static ArgDesc argDesc[] = {
    "user password (for encrypted files)"},
   {"-force", argFlag, &forceCopy, 0, "copy the text even if the document indicates we are not allowed"},
   {"-coalesce", argFlag, &HtmlOutputDev::doCoalesce, 0, "combine the strings"},
+  {"-paths", argFlag, &HtmlOutputDev::outputPaths, 0, "include paths, rectangles, etc."},
+  {"-images", argFlag, &HtmlOutputDev::outputImages, 0, "include images"},
   {NULL}
 };
 
@@ -249,7 +251,7 @@ int main(int argc, char *argv[]) {
   info.free();
   if( !docTitle ) docTitle = new GString(htmlFileName);
 
-  /* determine extensions of output backgroun images */
+  /* determine extensions of output background images */
   {int i;
   for(i = 0; extsList[i]; i++)
   {
@@ -273,7 +275,7 @@ int main(int argc, char *argv[]) {
 	  rawOrder, 
 	  firstPage,
 	  doc->getCatalog()->getOutline()->isDict());
-  fprintf(stderr, "file name = %s, %s\n", argv[1], htmlOut->filename());
+//  fprintf(stderr, "file name = %s, %s\n", argv[1], htmlOut->filename());
   delete docTitle;
   if( author )
   {   
