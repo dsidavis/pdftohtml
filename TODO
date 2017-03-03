@@ -1,3 +1,33 @@
+Generating invalid characters, e.g., ~/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/4068053084/.  These are mathematical symbols.
+   See HtmlFonts.cc  HtmlFont::HtmlFilter  
+
+Entities - replace & with &amp;    HtmlFont::HtmlFilter seems to be only place that addresses this.
+ See /Users/duncan/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/3793185613
+
+ /Users/duncan/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/2841880783 for < and > in an entity.
+
+
+SegFault   clearGList()
+ These seem to be figures that generate lots of paths/coords.
+ And I probably am not dealing with the memory management properly.
+ HtmlOutputDev.cc:1004 - two routines we instantiate. Called @1037 in HtmlPage::clear()
+  eg. ~/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/3704354175/
+  Also producing 200 Mb from a small pdf.
+  /Users/duncan/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/3419661726
+  also huge XML file.
+
+  doRadialShFill is common to both.
+  Also - Error: PDF version 1.6 -- xpdf supports version 1.5 (continuing anyway)
+ 
+  Also
+   /Users/duncan/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/2717564992
+
+
+[done] Add flag to turn off output of paths.  -paths
+
+[done] Add flag to turn off output of images.  -images
+  
+
 Have the coalesce respect changes in fonts, colors, etc.!
 
 Why do we get the rectangle  twice in plot.pdf in  ReadPDF/inst/samples/
