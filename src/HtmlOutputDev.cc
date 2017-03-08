@@ -51,6 +51,8 @@ GBool HtmlOutputDev::doCoalesce = true;
 GBool HtmlOutputDev::outputPaths = true;
 GBool HtmlOutputDev::outputImages = true;
 
+void writeURL(char *str, FILE *f);
+
 
 static GString* basename(GString* str){
   
@@ -703,13 +705,24 @@ void HtmlPage::dumpLinksAsXML(FILE* f)
         GString *lstr = l->getDest();
         char *str = lstr->getCString();
         fprintf(f, "<ulink url=\"");
-        for(int j = 0; j < strlen(str); j++) {
-            fprintf(f, "%c", str[j]);
-            if(str[j] == '&')
-               fprintf(f, "amp;");
-        }
+        writeURL(str, f);
         fprintf(f, "\" x1=\"%.3lf\" y1=\"%.3lf\" x2=\"%.3lf\"  y2=\"%.3lf\" />\n", l->getX1(), l->getY1(), l->getX2(), l->getY2());
         delete lstr;
+    }
+}
+
+void
+writeURL(char *str, FILE *f)
+{
+    for(int j = 0; j < strlen(str); j++) {
+        if(str[j] == '&')
+            fprintf(f, "amp;");
+        else if(str[j] == '<')
+            fprintf(f, "&lt;");
+        else if(str[j] == '>')
+            fprintf(f, "&gt;");
+        else 
+            fprintf(f, "%c", str[j]);
     }
 }
 
@@ -1123,7 +1136,7 @@ void HtmlOutputDev::doFrame(int firstPage){
   fputs("\n<HTML>",fContentsFrame);
   fputs("\n<HEAD>",fContentsFrame);
   fprintf(fContentsFrame,"\n<TITLE>%s</TITLE>",docTitle->getCString());
-  htmlEncoding = mapEncodingToHtml(globalParams->getTextEncodingName());
+  htmlEncoding = mapEncodingToHtml(globalParams->getTextEncodingName()); // leak GString
   fprintf(fContentsFrame, "\n<META http-equiv=\"Content-Type\" content=\"text/html; charset=%s\">\n", htmlEncoding);
   dumpMetaVars(fContentsFrame);
   fprintf(fContentsFrame, "</HEAD>\n");
@@ -1236,7 +1249,10 @@ HtmlOutputDev::HtmlOutputDev(char *pdfFileName, char *fileName, char *title,
       delete right;
     }
 
-    htmlEncoding = mapEncodingToHtml(globalParams->getTextEncodingName()); 
+    GString *tmp = globalParams->getTextEncodingName();
+    htmlEncoding = mapEncodingToHtml(tmp); 
+    delete tmp;
+
     if (xml) 
     {
       fprintf(page, "<?xml version=\"1.0\" encoding=\"%s\"?>\n", htmlEncoding);
@@ -1853,7 +1869,7 @@ GBool HtmlOutputDev::newOutlineLevel(FILE *output, Object *node, Catalog* catalo
 
       fputs("<li>",output);
       if (linkName)
-		fprintf(output,"<a href=\"%s\">", linkName->getCString());
+  	  fprintf(output,"<a href=\"%s\">", linkName->getCString());
       fputs(titleStr->getCString(),output);
       if (linkName) {
 		fputs("</a>",output);

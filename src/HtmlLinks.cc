@@ -55,7 +55,22 @@ HtmlLink& HtmlLink::operator=(const HtmlLink& x){
 
 GString* HtmlLink::getLinkStart() {
   GString *res = new GString("<a href=\"");
+
+#if 0
   res->append(dest);
+#else
+  char *str = dest->getCString();
+  for(int j = 0; j < strlen(str); j++) {
+        if(str[j] == '&')
+            res->append("amp;");
+        else if(str[j] == '<')
+            res->append("&lt;");
+        else if(str[j] == '>')
+            res->append("&gt;");
+        else
+            res->append(str[j]);
+    }
+#endif
   res->append("\">");
   return res;
 }
