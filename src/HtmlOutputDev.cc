@@ -1186,6 +1186,7 @@ HtmlOutputDev::HtmlOutputDev(char *pdfFileName, char *fileName, char *title,
   if( keywords ) glMetaVars->append(new HtmlMetaVar("keywords", keywords));  
   if( date ) glMetaVars->append(new HtmlMetaVar("date", date));  
   if( subject ) glMetaVars->append(new HtmlMetaVar("subject", subject));
+  if( title ) glMetaVars->append(new HtmlMetaVar("title", title));
  
   maxPageWidth = 0;
   maxPageHeight = 0;
@@ -1259,8 +1260,11 @@ HtmlOutputDev::HtmlOutputDev(char *pdfFileName, char *fileName, char *title,
       fputs("<!DOCTYPE pdf2xml SYSTEM \"pdf2xml.dtd\">\n\n", page);
       fputs("<pdf2xml>\n",page);
       fputs("  <docinfo>\n", page);
-      if(filename())
-          fprintf(page, "    <filename>%s</filename>\n", pdfFileName);
+      if(filename()) {
+          fprintf(page, "    <filename>");
+          writeURL(pdfFileName, page);// %s</filename>\n", pdfFileName);
+          fprintf(page, "    </filename>");
+      }
       time_t tm = time(NULL);
       char *str = ctime(&tm);
       str[strlen(str)-1] = '\0';
@@ -1269,6 +1273,8 @@ HtmlOutputDev::HtmlOutputDev(char *pdfFileName, char *fileName, char *title,
       struct stat st; 
       if(stat(pdfFileName, &st) == 0)
           fprintf(page, "     <filesize>%lld</filesize>\n",  st.st_size);
+
+      dumpMetaVars(page);
       fputs("  </docinfo>\n", page);
     } 
     else 
