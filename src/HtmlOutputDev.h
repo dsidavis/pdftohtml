@@ -263,7 +263,7 @@ public:
     HtmlMetaVar(char *_name, char *_content);
     ~HtmlMetaVar();    
     
-    GString* toString();	
+    GString* toString(bool xml = false);	
 
 private:
 

@@ -52,7 +52,7 @@ GBool HtmlOutputDev::outputPaths = true;
 GBool HtmlOutputDev::outputImages = true;
 
 void writeURL(char *str, FILE *f);
-
+GString *insertEntities(char *str);
 
 static GString* basename(GString* str){
   
@@ -728,6 +728,40 @@ writeURL(char *str, FILE *f)
     }
 }
 
+
+GString *
+insertEntities(char *str)
+{
+    GString *ans = new GString();
+    char *tmp;
+    char buf[2] = "?";
+    for(int j = 0; j < strlen(str); j++) {
+        switch(str[j]) {
+          case '&':
+            tmp = "&amp;";
+            break;
+          case '<':
+            tmp = "&lt;";
+            break;
+          case '>':
+            tmp = "&gt;";
+            break;
+          case '"':
+             tmp = "&quot;";
+             break;
+          default:
+            buf[0] = str[j];
+            tmp = buf;
+            break;
+        }
+
+        ans->append(tmp);
+    }
+//    ans->append('\0');
+    return(ans);
+}
+
+
 void HtmlPage::dumpAsXML(FILE* f, int page){  
   fprintf(f, "<page number=\"%d\" position=\"absolute\"", page);
   fprintf(f," top=\"0\" left=\"0\" height=\"%d\" width=\"%d\" rotation=\"%lf\">\n", pageHeight,pageWidth, rotation);
@@ -1093,7 +1127,10 @@ GString* HtmlMetaVar::toString(bool xml)
     result = new GString("<META name=\"");
     result->append(name);
     result->append("\" content=\"");
-    result->append(content);
+    GString *tmp;
+    tmp = insertEntities(content->getCString());
+    result->append(tmp);
+    delete tmp;
     result->append("\"/>"); 
     return result;
 }
@@ -1755,8 +1792,8 @@ void HtmlOutputDev::dumpMetaVars(FILE *file)
   {
      HtmlMetaVar *t = (HtmlMetaVar*)glMetaVars->get(i); 
      var = t->toString(); 
-//     fprintf(file, "%s\n", var->getCString());
-     writeURL(var->getCString(), file);
+     fprintf(file, "%s\n", var->getCString());
+//     writeURL(var->getCString(), file);
      delete var;
   }
 }
