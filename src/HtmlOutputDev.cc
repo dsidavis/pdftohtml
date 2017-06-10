@@ -721,6 +721,8 @@ writeURL(char *str, FILE *f)
             fprintf(f, "&lt;");
         else if(str[j] == '>')
             fprintf(f, "&gt;");
+        else if(str[j] == '"')
+            fprintf(f, "&quot;");
         else 
             fprintf(f, "%c", str[j]);
     }
@@ -1085,13 +1087,14 @@ HtmlMetaVar::~HtmlMetaVar()
    delete content;
 } 
     
-GString* HtmlMetaVar::toString()	
+GString* HtmlMetaVar::toString(bool xml)	
 {
-    GString *result = new GString("<META name=\"");
+    GString *result;
+    result = new GString("<META name=\"");
     result->append(name);
     result->append("\" content=\"");
     result->append(content);
-    result->append("\">"); 
+    result->append("\"/>"); 
     return result;
 }
 
@@ -1752,7 +1755,8 @@ void HtmlOutputDev::dumpMetaVars(FILE *file)
   {
      HtmlMetaVar *t = (HtmlMetaVar*)glMetaVars->get(i); 
      var = t->toString(); 
-     fprintf(file, "%s\n", var->getCString());
+//     fprintf(file, "%s\n", var->getCString());
+     writeURL(var->getCString(), file);
      delete var;
   }
 }
