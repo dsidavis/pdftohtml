@@ -1,3 +1,8 @@
+Have pdftohtml include the rotation information for text. 
+  See /Users/duncan/DSIProjects/Zoonotics-shared/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/0201749332/Aviles-1992-Transmission of western equine enc.xml
+
+Escape entity characters in fontName in src/HtmlFonts.cc
+
 Generating invalid characters, e.g., ~/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/4068053084/.  These are mathematical symbols.
    See HtmlFonts.cc  HtmlFont::HtmlFilter  
 
