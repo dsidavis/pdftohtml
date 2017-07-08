@@ -54,6 +54,30 @@ GBool HtmlOutputDev::outputImages = true;
 void writeURL(char *str, FILE *f);
 GString *insertEntities(char *str);
 
+
+
+double
+computeRotation(GfxState *state)
+{
+    double *ctm = state->getCTM();
+    double *T = state->getTextMat();
+
+    double x = ctm[0];
+    double y = ctm[2];
+
+    if(T[1] != 0 || T[2] != 0) { // off diagonals
+// if ctm[1] == 0  and ctm[2] == 0 then no  CTM rotation
+// For now, assuming (haven't thought enough) that we are
+// are CTM %*% textMat to get the composition.
+        x = T[0]*ctm[0] + T[2]*ctm[1];
+        y = T[0] * ctm[2] + T[2] * ctm[3];
+    }
+
+    double len = sqrt(x*x + y*y);
+    double rot = acos(x/len);
+    return(rot);
+}
+
 static GString* basename(GString* str){
   
   char *p=str->getCString();
@@ -78,7 +102,7 @@ static GString* Dirname(GString* str){
 // HtmlString
 //------------------------------------------------------------------------
 
-HtmlString::HtmlString(GfxState *state, double fontSize, double _charspace, HtmlFontAccu* fonts) {
+HtmlString::HtmlString(GfxState *state, double fontSize, double _charspace, HtmlFontAccu* fonts, double rotation) {
   GfxFont *font;
   double x, y;
 
@@ -120,6 +144,7 @@ HtmlString::HtmlString(GfxState *state, double fontSize, double _charspace, Html
   htext = new GString();
   htext2 = new GString();
   dir = textDirUnknown;
+  rotation_ = rotation;
 }
 
 
@@ -235,8 +260,10 @@ void HtmlPage::updateFont(GfxState *state) {
 }
 
 void HtmlPage::beginString(GfxState *state, GString *s) {
-//???  s is never ysed here.
-  curStr = new HtmlString(state, fontSize, charspace, fonts);
+//???  s is never used here.
+    double rotation = computeRotation(state);
+//    fprintf(stdout, "rotation for %s = %lf\n", s->getCString(), );
+    curStr = new HtmlString(state, fontSize, charspace, fonts, rotation);
 }
 
 void HtmlPage::showStrings() {
@@ -319,7 +346,10 @@ void HtmlPage::addChar(GfxState *state, double x, double y,
  }
 */
 
-
+//XXX Experimental
+  if(u[0] == 9)
+      u[0] = ' ';
+  
   for (i = 0; i < uLen; ++i) 
   {
            /* Dont break words in a phrase into separate strings. */
@@ -761,10 +791,21 @@ insertEntities(char *str)
     return(ans);
 }
 
+#define PI 3.1415926535897931
+
+double
+toDegrees(double radians)
+{
+    double val;
+    val = 180./PI*radians;
+    if(radians > PI/2.0)
+        val = 360. - val;
+    return(val);
+}
 
 void HtmlPage::dumpAsXML(FILE* f, int page){  
   fprintf(f, "<page number=\"%d\" position=\"absolute\"", page);
-  fprintf(f," top=\"0\" left=\"0\" height=\"%d\" width=\"%d\" rotation=\"%lf\">\n", pageHeight,pageWidth, rotation);
+  fprintf(f," top=\"0\" left=\"0\" width=\"%d\" height=\"%d\" rotation=\"%lf\">\n", pageWidth, pageHeight, rotation);
     
   for(int i=fontsPageMarker;i < fonts->size();i++) {
     GString *fontCSStyle = fonts->CSStyle(i);
@@ -782,7 +823,8 @@ void HtmlPage::dumpAsXML(FILE* f, int page){
       str=new GString(tmp->htext);
       fprintf(f,"<text top=\"%d\" left=\"%d\" ", xoutRound(tmp->yMin), xoutRound(tmp->xMin));
       fprintf(f,"width=\"%d\" height=\"%d\" ", xoutRound(tmp->xMax - tmp->xMin), xoutRound(tmp->yMax - tmp->yMin));
-      fprintf(f,"font=\"%d\">", tmp->fontpos);
+      fprintf(f,"font=\"%d\" ", tmp->fontpos);
+      fprintf(f,"rotation=\"%lf\">", toDegrees(tmp->rotation_));
       if (tmp->fontpos!=-1){
 	str1=fonts->getCSStyle(tmp->fontpos, str);
       }
@@ -1430,9 +1472,24 @@ void HtmlOutputDev::updateFont(GfxState *state) {
   pages->updateFont(state);
 }
 
+
+
+
+void
+computeScale(GfxState *state, double *width, double *height)
+{
+    double *ctm = state->getCTM();
+
+    *width = ctm[0];
+    *height = ctm[3]; 
+}
+
+
+
 void HtmlOutputDev::beginString(GfxState *state, GString *s) {
   pages->beginString(state, s);
 }
+
 
 void HtmlOutputDev::endString(GfxState *state) {
   pages->endString();
@@ -1462,7 +1519,11 @@ void HtmlOutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str,
 
   int i, j;
   
+
   if (ignore||complexMode) {
+    pages->AddImage(state, ref, str, width, height, NULL, NULL, inlineImg);
+    if(!HtmlOutputDev::outputImages)
+      outputImage(state, ref, str);
     OutputDev::drawImageMask(state, ref, str, width, height, invert, inlineImg);
     return;
   }
@@ -1549,11 +1610,24 @@ void HtmlOutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str,
 
 void HtmlOutputDev::drawImage(GfxState *state, Object *ref, Stream *str,
                               int width, int height, GfxImageColorMap *colorMap,
-                              int *maskColors, GBool inlineImg) {
+                              int *maskColors, GBool inlineImg) 
+{
 
   int i, j;
-   
+
   pages->AddImage(state, ref, str, width, height, colorMap, maskColors, inlineImg);
+
+  if(HtmlOutputDev::outputImages)
+     outputImage(state, ref, str);
+
+#if 0
+  char buf[10000];
+  str->getLine(buf, 10000);
+  int vals[11];
+  for(int k = 0; k < 10; k++) {
+      vals[k] = str->getRawChar();
+  }
+#endif
 
   if (ignore||complexMode) {
     OutputDev::drawImage(state, ref, str, width, height, colorMap, 
@@ -2073,20 +2147,22 @@ void HtmlPage::AddImage(GfxState *state, Object *ref, Stream *str,
                         GfxImageColorMap *colorMap, int *maskColors,
                         GBool inlineImg)
 {
-
-    if(!HtmlOutputDev::outputImages)
-        return;
-
 // Can we get information out of the ref?
 // do we need to transform? Probably.
 
-//    double x, y, x1, y1;
-//  state->transform(state->getCurX(), state->getCurY(), &x, &y);
-//  state->transform(state->getCurX() + width, state->getCurY() + height, &x1, &y1);
-//  Image *img = new Image(x, y, x1 - x, y1 - y); //width, height);
-//printf("AddImage %d\n", pageNumber);
-    Image *img = new Image(state->getCurX(), state->getCurY(), width, height);
-    images.append(img);
+    double x = 0, y = 0, x1 = 0, y1 = 0;
+  state->transform(state->getCurX(), state->getCurY(), &x, &y);
+  state->transform(state->getCurX() + width, state->getCurY() + height, &x1, &y1);
+#if 0
+  Image *img1 = new Image(x, y, x1 - x, y1 - y); //width, height);
+  printf("AddImage %d, w = %lf, h = %lf, x = %lf, y = %lf, W = %lf, H = %lf\n",
+         pageNumber, x1, y1, x, y, x1-x, y1-y);
+#endif
+
+  double wscale, hscale;
+  computeScale(state, &wscale, &hscale);
+  Image *img = new Image(state->getCurX(), state->getCurY(), width, height, wscale, hscale, computeRotation(state));
+  images.append(img);
 }
 
 void Image::dumpAsXML(FILE *f)
@@ -2098,7 +2174,9 @@ void Image::dumpAsXML(FILE *f)
 
 void Image::dumpAsXMLAttributes(FILE *f)
 {
-    fprintf(f, "x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" ", x, y, width, height);
+    fprintf(f, "x=\"%d\" y=\"%d\" originalWidth=\"%d\" originalHeight=\"%d\" width=\"%lf\" height=\"%lf\"", x, y, width, height, drawnWidth, fabs(drawnHeight));
+    if(rotation != 0.0)
+        fprintf(f, "rotation=\"%lf\"", toDegrees(rotation));
 }
 
 void NamedImage::dumpAsXMLAttributes(FILE *f)
@@ -2164,14 +2242,14 @@ void HtmlOutputDev::form1(GfxState *state, Object *str, Dict *dict, double *matr
     height = y1 - cury;
     if(filename.isString()) {
         char* fn = filename.getString()->getCString();
-        img = new NamedImage(fn, state->getCurX(), state->getCurY(), width, height);
+        img = new NamedImage(fn, state->getCurX(), state->getCurY(), width, height, -1.0, -1.0);
         Object imgInfo;
         dict->lookup("PTEX.InfoDict", &imgInfo);
         if(imgInfo.isDict())
             ((NamedImage *) img)->setPropsDict(imgInfo.getDict());
         
     } else {
-        img = new Image(state->getCurX(), state->getCurY(), width, height);
+        img = new Image(state->getCurX(), state->getCurY(), width, height, -1.0, -1.0);
     }
     pages->images.append(img);       
 }
@@ -2188,6 +2266,20 @@ void HtmlOutputDev::updateStrokeColorSpace(GfxState *state)
 //    fprintf(stderr, "switching stroke color space to %s\n", GfxColorSpace::getColorSpaceModeName(state->getStrokeColorSpace()->getMode()));
 }
 
+
+void HtmlOutputDev::updateTextPos(GfxState *state)
+{
+#if 0
+    fprintf(stderr, "updateTextPos\n");
+    Unicode u[8];// = {0x20};
+    u[0] = 0x20;
+    drawChar(state, state->getCurX(), state->getCurY(), state->getWordSpace(), 0, 0, 0, (CharCode) 0x20, 1, u, 1);
+#else
+//    beginString(state, new GString("  xxx "));
+//    endString(state);
+//    drawString(state, new GString("!!"));
+#endif
+}
 
 
 
@@ -2224,4 +2316,98 @@ PathStateInfo::dumpAsXMLAttrs(FILE *f)
             fprintf(f, "%.3lf%s", dash[i], (i < (numDash - 1)) ? "," : "");
         fprintf(f, "\" startDash=\"%.3lf\" ", start);
     }
+}
+
+
+
+
+
+void
+HtmlOutputDev::outputImage(GfxState *state, Object *ref, Stream *str)
+{
+  FILE *f1;
+  ImageStream *imgStr;
+  Guchar pixBuf[4];
+  GfxColor color;
+  int c;
+  
+  int x0, y0;			// top left corner of image
+  int w0, h0, w1, h1;		// size of image
+  double xt, yt, wt, ht;
+  GBool rotate, xFlip, yFlip;
+  GBool dither;
+  int x, y;
+  int ix, iy;
+  int px1, px2, qx, dx;
+  int py1, py2, qy, dy;
+  Gulong pixel;
+  int nComps, nVals, nBits;
+  double r1, g1, b1;
+ 
+  // get image position and size
+  state->transform(0, 0, &xt, &yt);
+  state->transformDelta(1, 1, &wt, &ht);
+  if (wt > 0) {
+    x0 = xoutRound(xt);
+    w0 = xoutRound(wt);
+  } else {
+    x0 = xoutRound(xt + wt);
+    w0 = xoutRound(-wt);
+  }
+  if (ht > 0) {
+    y0 = xoutRound(yt);
+    h0 = xoutRound(ht);
+  } else {
+    y0 = xoutRound(yt + ht);
+    h0 = xoutRound(-ht);
+  }
+  state->transformDelta(1, 0, &xt, &yt);
+  rotate = fabs(xt) < fabs(yt);
+  if (rotate) {
+    w1 = h0;
+    h1 = w0;
+    xFlip = ht < 0;
+    yFlip = wt > 0;
+  } else {
+    w1 = w0;
+    h1 = h0;
+    xFlip = wt < 0;
+    yFlip = ht > 0;
+  }
+
+   
+  /*if( !globalParams->getErrQuiet() )
+    printf("image stream of kind %d\n", str->getKind());*/
+  // dump JPEG file
+  if (str->getKind() == strDCT) {
+    GString *fName=new GString(Docname);
+    fName->append("-");
+    GString *pgNum= GString::fromInt(pageNum);
+    GString *imgnum= GString::fromInt(imgNum);  
+    
+    // open the image file
+    fName->append(pgNum)->append("_")->append(imgnum)->append(".jpg");
+    ++imgNum;
+    
+    if (!(f1 = fopen(fName->getCString(), "wb"))) {
+      error(-1, "Couldn't open image file '%s'", fName->getCString());
+      return;
+    }
+
+    // initialize stream
+    str = ((DCTStream *)str)->getRawStream();
+    str->reset();
+
+    // copy the stream
+    while ((c = str->getChar()) != EOF)
+      fputc(c, f1);
+    
+    fclose(f1);
+  
+    delete fName;
+    delete pgNum;
+    delete imgnum;
+  } else if( !globalParams->getErrQuiet() )
+      fprintf(stderr, "warning: can't write image (type = %d)\n", str->getKind());
+
 }

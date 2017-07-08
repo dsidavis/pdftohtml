@@ -52,7 +52,7 @@ class HtmlString {
 public:
 
   // Constructor.
-  HtmlString(GfxState *state, double fontSize, double charspace, HtmlFontAccu* fonts);
+    HtmlString(GfxState *state, double fontSize, double charspace, HtmlFontAccu* fonts, double rotation = 0.0);
 
   // Destructor.
   ~HtmlString();
@@ -63,6 +63,8 @@ public:
 	       Unicode u); 
   HtmlLink* getLink() { return link; }
   void endString(); // postprocessing
+
+  double rotation() { return(rotation_); }
 
 private:
 // aender die text variable
@@ -81,7 +83,9 @@ private:
   int len;			// length of text and xRight
   int size;			// size of text and xRight arrays
   UnicodeTextDirection dir;	// direction (left to right/right to left)
-  
+
+  double rotation_;
+
   friend class HtmlPage;
 
 };
@@ -94,21 +98,25 @@ private:
 
 class Image {
 public:
-     Image(int x, int y, int width, int height) : 
-           x(x), y(y), width(width), height(height) {
+Image(int x, int y, int width, int height, double drawnWidth, double drawnHeight,
+       double rotation = 0.0) : 
+        x(x), y(y), width(width), height(height), 
+	    drawnWidth(drawnWidth), drawnHeight(drawnHeight), rotation(rotation) {
      }
 
      virtual void dumpAsXML(FILE *f);
 
 protected:
-    int x, y, width, height;
+     int x, y, width, height;
+     double drawnWidth, drawnHeight;
+     double rotation;
 
      virtual void dumpAsXMLAttributes(FILE *f);
 };
 
 class NamedImage : public Image {
 public:
-     NamedImage(const char *filename, int x, int y, int width, int height) :  Image(x, y, width, height) {  
+NamedImage(const char *filename, int x, int y, int width, int height, double drawnWidth, double drawnHeight) :  Image(x, y, width, height, drawnWidth, drawnHeight) {  
 	setFilename(filename);
      }
 
@@ -327,6 +335,7 @@ public:
   //----- update text state
   virtual void updateFont(GfxState *state);
   virtual void updateCharSpace(GfxState *state);
+  virtual void updateTextPos(GfxState *state);
 
   //----- text drawing
   virtual void beginString(GfxState *state, GString *s);
@@ -375,6 +384,8 @@ public:
   
   const char *filename() const { return _filename;}
   const char *filename(const char *fn)  { _filename = fn; return _filename;}
+
+  void outputImage(GfxState *state, Object *ref, Stream *str);
 
 private:
   // convert encoding into a HTML standard, or encoding->getCString if not
