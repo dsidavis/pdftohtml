@@ -49,7 +49,7 @@ extern GBool noMerge;
 
 GBool HtmlOutputDev::doCoalesce = true;
 GBool HtmlOutputDev::outputPaths = true;
-GBool HtmlOutputDev::outputImages = true;
+GBool HtmlOutputDev::outputImages = false;
 
 void writeURL(char *str, FILE *f);
 GString *insertEntities(char *str);
