@@ -1,15 +1,24 @@
-Have pdftohtml include the rotation information for text. 
++ Recognize spacing between strings - see 394.full.pdf  ResearchGate pages.
+
++ [done] Have pdftohtml include the rotation information for text. 
+  examples/rotate.pdf and .tex - 45, 90 and horizontal
   See /Users/duncan/DSIProjects/Zoonotics-shared/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/0201749332/Aviles-1992-Transmission of western equine enc.xml
+  And for images.
+  
++ [done] Size of images as rendered on the page
+   examples/img.pdf and .tex
 
-Escape entity characters in fontName in src/HtmlFonts.cc
 
-Generating invalid characters, e.g., ~/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/4068053084/.  These are mathematical symbols.
-   See HtmlFonts.cc  HtmlFont::HtmlFilter  
-
-Entities - replace & with &amp;    HtmlFont::HtmlFilter seems to be only place that addresses this.
++ Escape entity characters in fontName in src/HtmlFonts.cc
+  Entities - replace & with &amp;    HtmlFont::HtmlFilter seems to be only place that addresses this.
  See /Users/duncan/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/3793185613
 
- /Users/duncan/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/2841880783 for < and > in an entity.
+ /Users/duncan/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/2841880783 for
+
++ Generating invalid characters, e.g., ~/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/4068053084/.  These are mathematical symbols.
+   See HtmlFonts.cc  HtmlFont::HtmlFilter  
+
+< and > in an entity.
 
 
 SegFault   clearGList()
@@ -28,12 +37,9 @@ SegFault   clearGList()
    /Users/duncan/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/2717564992
 
 
-[done] Add flag to turn off output of paths.  -paths
+ 
 
-[done] Add flag to turn off output of images.  -images
-  
-
-Have the coalesce respect changes in fonts, colors, etc.!
+Have the coalesce respect changes in fonts, colors, rotation, etc.!
 
 Why do we get the rectangle  twice in plot.pdf in  ReadPDF/inst/samples/
 
@@ -44,7 +50,10 @@ Fix the coalesce() routine and the fixFnt and <span/>.
 [check] Fix all the fontspecs in the XML that are the same.
   There is extra information about italic, bold, oblique,  that we weren't emitting and so they may well have been unique.
 
-Info about Images
++ [done] Info about Images 
+  See img.tex/pdf.  We have a 520x700 image of shields library.
+  On each of page 2, 3, 4 we change its size on the page. We report the same size in the XML
+  So we need  the *transformed dimensions*
   Get the correct x, y, width and height for PDF images.
     width and height seem to be the issue.
   [Done now] Not recognizing the PDF image in map.pdf.  What is the op in the PDF processing.
@@ -82,13 +91,17 @@ In sample.pdf created by R, we are getting text elements with a value of q.
 
 --------------------
 
-[done] Add the rotation to each <page>.
++ [done] Add flag to turn off output of paths.  -paths
 
-[done] insert info. about links
++ [done] Add flag to turn off output of images.  -images
+
++ [done] Add the rotation to each <page>.
+
++ [done] insert info. about links
   HmtmlOutputDev::drawLink() while processing a page.
   Calls pages->AddLink(t). So in the page.
 
-[done] For the paths, do we need to deal with the current transformation
++ [done] For the paths, do we need to deal with the current transformation
   Did we do this?  location, scaling.
 
   In KimShauman/inst/SampleCVs/CVTsoukiasweb_pdftohtml.xml, the <rect>
