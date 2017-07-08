@@ -1,3 +1,54 @@
+The CTM is set in GfxState::GfxState initially and is [1.5 0, 0 -1.5]
+based on the dimensions of the page in DPI/72.
+
+Rotation - see computeRotation.
+ Works for examples/rotate.pdf
+[Check fix] Not working for Zoonotics
+  Look at the text matrix:
+    0588333063/de\ Souza\ Lopes-1981-Emergence\ of\ a\ new\ arbovir.pdf 
+    0819573157/Rust-1999-Topical\ review_\ La\ Crosse\ and\ other.pdf 
+    0045901437/Heymann-1998-Re-emergence of Monkeypox in Afri.pdf
+       On line 285 of the uncompressed version, we have:
+           0 Tw 100  Tz 0 Tr 0 -8 8 0 511 359.71606 Tm
+
+Check examples/keynote.key.pdf and examples/img.pdf 
+??? img.pdf seems odd - pages 3 and 4???
+
++ [done] Rotated images?
+  Added to output if rotated.
+
++ [Done] Scaling of images?
+ PDF reference, p351 :"but since all images are defined on the unit square in user space,.."
+  This suggests that getting the a and d in the CTM is appropriate for the drawn dimensions
+  as the image will be scaled to these.
+
++ [Fixed] Doesn't produce any <img> elements: 0325259182/Rowan-1957-Relationship between Some Coastal F.pdf
+ Note that it is an ImageMask. That was the issue.
+
+
++ Now outputting both the original height and width as well as the CTM scale values
+i.e. the CTM[1,1] and CTM[2,2] elements and assuming these are the dimensions of the drawn images
+Seems to work for, e.g.,
+  0588333063/de\ Souza\ Lopes-1981-Emergence\ of\ a\ new\ arbovir.pdf 
+
+In keynote.key.pdf, the first page image - regular size of 500 x 720
+  311 0 0 419.9129 156 186.0436 cm /Im1 Do
+And the second shrunk image is
+  187 0 0 252.549 186 173.0153 cm /Im1 Do
+
+When we move the second one to the top-left corner of the slide
+ 187 0 0 252.549 7 335.3682 cm /Im1 Do Q
+Note the last two 
+
+
+How to get the contents of an image and write them to a file as a PNG, JPEG, etc.
+i.e. their original format.
+  Can handle JPG
+
+
+
+
+
 How are the flags being set so that isItalic()  on a GfxFont returns true.
 
 
