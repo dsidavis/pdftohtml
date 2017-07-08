@@ -1,12 +1,13 @@
-+ Recognize spacing between strings - see 394.full.pdf  ResearchGate pages.
+# Todo List
 
-+ [done] Have pdftohtml include the rotation information for text. 
-  examples/rotate.pdf and .tex - 45, 90 and horizontal
-  See /Users/duncan/DSIProjects/Zoonotics-shared/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/0201749332/Aviles-1992-Transmission of western equine enc.xml
-  And for images.
-  
-+ [done] Size of images as rendered on the page
-   examples/img.pdf and .tex
+##
+
++ Write TIFF  images out.
+
+ 
++ The links are wrong in
+  0045901437/Heymann-1998-Re-emergence of Monkeypox in Afri.pdf
+  i.e the Download link and the text for the link are out of sync.
 
 
 + Escape entity characters in fontName in src/HtmlFonts.cc
@@ -18,10 +19,10 @@
 + Generating invalid characters, e.g., ~/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/4068053084/.  These are mathematical symbols.
    See HtmlFonts.cc  HtmlFont::HtmlFilter  
 
-< and > in an entity.
++ < and > in an entity.
 
 
-SegFault   clearGList()
++ SegFault   clearGList()
  These seem to be figures that generate lots of paths/coords.
  And I probably am not dealing with the memory management properly.
  HtmlOutputDev.cc:1004 - two routines we instantiate. Called @1037 in HtmlPage::clear()
@@ -37,18 +38,51 @@ SegFault   clearGList()
    /Users/duncan/DSIProjects/Zoonotics/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/2717564992
 
 
- 
++ Have the coalesce respect changes in fonts, colors, rotation, etc.!
 
-Have the coalesce respect changes in fonts, colors, rotation, etc.!
++ Why do we get the rectangle  twice in plot.pdf in  ReadPDF/inst/samples/
 
-Why do we get the rectangle  twice in plot.pdf in  ReadPDF/inst/samples/
-
-Fix the coalesce() routine and the fixFnt and <span/>. 
++ Fix the coalesce() routine and the fixFnt and <span/>. 
    For now it is disabled.
    We seem to be adding span elements even when the font isn't changing - it is being set, but still the same.
 
-[check] Fix all the fontspecs in the XML that are the same.
++ [check] Fix all the fontspecs in the XML that are the same.
   There is extra information about italic, bold, oblique,  that we weren't emitting and so they may well have been unique.
+
+
+   Memory management.
+
+
++ In sample.pdf created by R, we are getting text elements with a value of q.
+   Can we do better?
+   These are the points in the plot.  These are in font F1 which is ZapfDingbats
+
++ [check] Get colors and line width, styles, etc of rectangles, lines etc.
+
+  Dashes on lines.
+
+  fill and line colors
+
+  out device is notified of a change to colors with updateStrokeColor(), updateFillColor().
+  Doesn't say which type of color it is. 
+    The GfxColorSpace has a getMode() and this tells us what it is. We can even get the name.
+    But with the plot.pdf which has an /sRGB
+
+  Stroke versus fill
+
+
+## Verify
+
++ [verify] Recognize spacing between strings - see LatestDocs/PDF/1834853125/394.full.pdf ResearchGate pages.
+  See word.pdf.
+  With -coalesce toggled off, we get the individual characters along with
+   an entry with no character.
+  Seems like we have a \t so convert it to a space for now.
+
+
+  
+
+## Done
 
 + [done] Info about Images 
   See img.tex/pdf.  We have a 520x700 image of shields library.
@@ -65,31 +99,16 @@ Fix the coalesce() routine and the fixFnt and <span/>.
   [yes] can we get the name of the original file if it is available.
      And meta data for the file.
 
-   Memory management.
 
-
-In sample.pdf created by R, we are getting text elements with a value of q.
-   Can we do better?
-
-
-[check] Get colors and line width, styles, etc of rectangles, lines etc.
-
-  Dashes on lines.
-
-  fill and line colors
-
-  out device is notified of a change to colors with updateStrokeColor(), updateFillColor().
-  Doesn't say which type of color it is. 
-    The GfxColorSpace has a getMode() and this tells us what it is. We can even get the name.
-    But with the plot.pdf which has an /sRGB
-
-  Stroke versus fill
-
++ [done] Have pdftohtml include the rotation information for text. 
+  examples/rotate.pdf and .tex - 45, 90 and horizontal
+  See /Users/duncan/DSIProjects/Zoonotics-shared/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/0201749332/Aviles-1992-Transmission of western equine enc.xml
+  And for images.
   
++ [done] Size of images as rendered on the page
+   examples/img.pdf and .tex
 
-  
 
---------------------
 
 + [done] Add flag to turn off output of paths.  -paths
 
