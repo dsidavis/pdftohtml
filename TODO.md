@@ -2,6 +2,12 @@
 
 ##
 
++ Text for the link to the journal homepage in 0807555993/ has odd/unhelpful spacing. See
+  2036745528/ also.
+
++ Are the x, y attributes for an image correct. See 0807555993/ and the two images that seem to be
+  lower down than the text.
+
 + Write TIFF  images out.
 
  
