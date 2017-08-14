@@ -2150,14 +2150,14 @@ void HtmlPage::AddImage(GfxState *state, Object *ref, Stream *str,
 // Can we get information out of the ref?
 // do we need to transform? Probably.
 
-    double x = 0, y = 0, x1 = 0, y1 = 0;
+  double x = 0, y = 0, x1 = 0, y1 = 0;
   state->transform(state->getCurX(), state->getCurY(), &x, &y);
   state->transform(state->getCurX() + width, state->getCurY() + height, &x1, &y1);
-#if 0
-  Image *img1 = new Image(x, y, x1 - x, y1 - y); //width, height);
-  printf("AddImage %d, w = %lf, h = %lf, x = %lf, y = %lf, W = %lf, H = %lf\n",
-         pageNumber, x1, y1, x, y, x1-x, y1-y);
-#endif
+
+#if 1
+  printf("AddImage %d, x1 = %lf, y1 = %lf, x = %lf, y = %lf, W = %lf, H = %lf, curx = %lf, cury = %lf\n",
+        pageNumber, x1, y1, x, y, x1-x, y1-y, state->getCurX(), state->getCurY());
+#endif  
 
   double wscale, hscale;
   computeScale(state, &wscale, &hscale);
@@ -2176,7 +2176,7 @@ void Image::dumpAsXMLAttributes(FILE *f)
 {
     fprintf(f, "x=\"%d\" y=\"%d\" originalWidth=\"%d\" originalHeight=\"%d\" width=\"%lf\" height=\"%lf\"", x, y, width, height, drawnWidth, fabs(drawnHeight));
     if(rotation != 0.0)
-        fprintf(f, "rotation=\"%lf\"", toDegrees(rotation));
+        fprintf(f, " rotation=\"%lf\"", toDegrees(rotation));
 }
 
 void NamedImage::dumpAsXMLAttributes(FILE *f)
