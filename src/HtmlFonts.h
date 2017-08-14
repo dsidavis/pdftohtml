@@ -6,6 +6,8 @@
 #include "CharTypes.h"
 
 
+GString *insertEntities(char *str);
+
 class HtmlFontColor{
  private:
    unsigned int r;
