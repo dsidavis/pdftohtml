@@ -346,7 +346,7 @@ GString* HtmlFontAccu::CSStyle(int i){
    }
    if (xml) {
        GString *fontFullName = font.getFullName();
-       GString *tmp = insertEntities(fontFullName->getCString());
+       GString *tmp1 = insertEntities(fontFullName->getCString());
      tmp->append("<fontspec id=\"");
      tmp->append(iStr);
      tmp->append("\" size=\"");
@@ -362,10 +362,10 @@ GString* HtmlFontAccu::CSStyle(int i){
      tmp->append("\"  isOblique=\"");
      tmp->append(font.isOblique() ? "1" : "0");
      tmp->append("\"  name=\"");
-     tmp->append(fontFullName); // XXXX Need to escape any entitiy names, e.g., &  See /Users/duncan/DSIProjects/Zoonotics-shared/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/3793185613
+     tmp->append(tmp1); // XXXX Need to escape any entitiy names, e.g., &  See /Users/duncan/DSIProjects/Zoonotics-shared/NewData_Feb2017/Zoo_02_02_2017 Copy.Data/PDF/3793185613
      tmp->append("\"/>");
      delete fontFullName;
-     delete tmp;
+     delete tmp1;
    }
 
    delete fontName;

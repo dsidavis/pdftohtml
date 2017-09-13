@@ -2161,7 +2161,8 @@ void HtmlPage::AddImage(GfxState *state, Object *ref, Stream *str,
 
   double wscale, hscale;
   computeScale(state, &wscale, &hscale);
-  Image *img = new Image(state->getCurX(), state->getCurY(), width, height, wscale, hscale, computeRotation(state));
+  /*  */
+  Image *img = new Image(state->getCurX(), state->getCurY() /*x, y */ , width, height, wscale, hscale, computeRotation(state));
   images.append(img);
 }
 
