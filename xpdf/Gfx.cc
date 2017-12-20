@@ -2704,6 +2704,8 @@ void Gfx::doShowText(GString *s)
   char *p;
   int len, n, uLen, nChars, nSpaces, i;
 
+char *tmp = s->getCString();
+  
   font = state->getFont();
   wMode = font->getWMode();
 
