@@ -1792,7 +1792,7 @@ GString* HtmlOutputDev::getLinkDest(Link *link,Catalog* catalog){
 		}
 	      }
 
-	      if (printCommands) printf(" link to page %d \n",page);
+	      if (printCommands) printf(" xlink to page %d \n",page);
 	      delete str;
 	      return file;
 	  }
@@ -1816,7 +1816,7 @@ GString* HtmlOutputDev::getLinkDest(Link *link,Catalog* catalog){
 	      if (!(dest->isPageRef()))  page=dest->getPageNum();
 	      delete dest;
 
-	      if (printCommands) printf(" link to page %d \n",page);
+	      if (printCommands) printf(" rlink to page %d \n",page);
 	      if (printHtml){
 		  p=file->getCString()+file->getLength()-4;
 		  if (!strcmp(p, ".pdf") || !strcmp(p, ".PDF")){
@@ -2183,7 +2183,7 @@ void Image::dumpAsXMLAttributes(FILE *f)
 void NamedImage::dumpAsXMLAttributes(FILE *f)
 {
     Image::dumpAsXMLAttributes(f);
-    fprintf(f, "filename=\"%s\" ", filename);
+    fprintf(f, " filename=\"%s\" ", filename);
     if(propsDict && 1) {
         int i, n = propsDict->getLength();
         for(i = 0; i < n ; i++) {

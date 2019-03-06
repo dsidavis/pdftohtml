@@ -29,11 +29,13 @@ static inline int size(int len) {
 }
 
 inline void GString::resize(int length1) {
-  char *s1;
 
   if (!s) {
-    s = new char[size(length1)];
+//DTL experiment for valgrind "reachable"s
+//      if(length1 > 0)
+         s = new char[size(length1)];
   } else if (size(length1) != size(length)) {
+    char *s1;
     s1 = new char[size(length1)];
     if (length1 < length) {
       memcpy(s1, s, length1);
