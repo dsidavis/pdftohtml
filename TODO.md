@@ -2,6 +2,9 @@
 
 ##
 
++ [done] Fix the name of the file for internal links. See RClang.pdf. Internal links are, e.g.,
+  RClang.html#31.  Where did the RClang.html come from?
+
 + Text for the link to the journal homepage in 0807555993/ has odd/unhelpful spacing. See
   2036745528/ also.
 
@@ -9,12 +12,10 @@
   lower down than the text.
 
 + Write TIFF  images out.
-
  
 + The links are wrong in
   0045901437/Heymann-1998-Re-emergence of Monkeypox in Afri.pdf
   i.e the Download link and the text for the link are out of sync.
-
 
 + Escape entity characters in fontName in src/HtmlFonts.cc
   Entities - replace & with &amp;    HtmlFont::HtmlFilter seems to be only place that addresses this.
@@ -62,7 +63,9 @@
 + In sample.pdf created by R, we are getting text elements with a value of q.
    Can we do better?
    These are the points in the plot.  These are in font F1 which is ZapfDingbats
-
+   The rendering mode changes (0/1/2 Tr)
+   If we do pch = 1:20
+   
 + [check] Get colors and line width, styles, etc of rectangles, lines etc.
 
   Dashes on lines.
