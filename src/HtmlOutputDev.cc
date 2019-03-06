@@ -1774,7 +1774,12 @@ GString* HtmlOutputDev::getLinkDest(Link *link,Catalog* catalog){
 	       */
 	      if (noframes)
 	      {
-		  file->append(".html#");
+		  if(!xml)
+                      file->append(".html#");
+                  else {
+                      delete file;
+                      file = new GString("#");
+                  }
 		  file->append(str);
 	      }
 	      else
