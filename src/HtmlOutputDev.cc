@@ -930,8 +930,11 @@ void HtmlPage::dumpAsXML(FILE *f, GfxSubpath *sp, PathStateInfo *info, bool inde
   }
 #endif
 
-  fprintf(f, "\n   <coords numPoints=\"%d\">", n);
-
+  fprintf(f, "\n   <coords numPoints=\"%d\" ", n);
+  if(info)
+      info->dumpAsXMLAttrs(f);
+  fprintf(f, ">\n");
+  
   for(int i = 0; i < n ; i++) 
     fprintf(f, "\n      <coord>%0.3lf %0.3lf</coord>", sp->getX(i),  sp->getY(i));
   fprintf(f, "\n   </coords>");
@@ -1220,7 +1223,7 @@ void HtmlOutputDev::doFrame(int firstPage){
   fprintf(fContentsFrame,"\n<TITLE>%s</TITLE>",docTitle->getCString());
   htmlEncoding = mapEncodingToHtml(globalParams->getTextEncodingName()); // leak GString
   fprintf(fContentsFrame, "\n<META http-equiv=\"Content-Type\" content=\"text/html; charset=%s\">\n", htmlEncoding);
-  dumpMetaVars(fContentsFrame);
+  dumpMetaVars(fContentsFrame, NULL);
   fprintf(fContentsFrame, "</HEAD>\n");
   fputs("<FRAMESET cols=\"100,*\">\n",fContentsFrame);
   fprintf(fContentsFrame,"<FRAME name=\"links\" src=\"%s_ind.html\">\n",fName->getCString());
@@ -1242,7 +1245,7 @@ void HtmlOutputDev::doFrame(int firstPage){
 HtmlOutputDev::HtmlOutputDev(char *pdfFileName, char *fileName, char *title, 
 	char *author, char *keywords, char *subject, char *date,
 	char *extension,
-	GBool rawOrder, int firstPage, GBool outline) 
+        GBool rawOrder, int firstPage, GBool outline, Dict *info) 
 {
   char *htmlEncoding;
   
@@ -1356,7 +1359,7 @@ HtmlOutputDev::HtmlOutputDev(char *pdfFileName, char *fileName, char *title,
       if(stat(pdfFileName, &st) == 0)
           fprintf(page, "     <filesize>%lld</filesize>\n",  st.st_size);
 
-      dumpMetaVars(page);
+      dumpMetaVars(page, info);
       fputs("  </docinfo>\n", page);
     } 
     else 
@@ -1366,7 +1369,7 @@ HtmlOutputDev::HtmlOutputDev(char *pdfFileName, char *fileName, char *title,
       
       fprintf(page, "<META http-equiv=\"Content-Type\" content=\"text/html; charset=%s\">\n", htmlEncoding);
       
-      dumpMetaVars(page);
+      dumpMetaVars(page, info);
       fprintf(page,"</HEAD>\n");
       fprintf(page,"<BODY bgcolor=\"#A0A0A0\" vlink=\"blue\" link=\"blue\">\n");
     }
@@ -1863,7 +1866,7 @@ GString* HtmlOutputDev::getLinkDest(Link *link,Catalog* catalog){
   }
 }
 
-void HtmlOutputDev::dumpMetaVars(FILE *file)
+void HtmlOutputDev::dumpMetaVars(FILE *file, Dict *info)
 {
   GString *var;
 
@@ -1875,6 +1878,24 @@ void HtmlOutputDev::dumpMetaVars(FILE *file)
 //     writeURL(var->getCString(), file);
      delete var;
   }
+
+  if(info) {
+      for(int i = 0; i < info->getLength(); i++)  {
+          char *key = info->getKey(i);
+          Object val;
+          info->getVal(i, &val);
+          
+          fprintf(file, "<info name=\"%s\" type=\"%d\" typeName=\"%s\">", key, val.getType(), val.getTypeName());
+          //fprintf(file, "%s", val.getString()->getCString());
+          GString *s = insertEntities(val.getString()->getCString());
+          fprintf(file, "%s", s->getCString());
+//          val.print(file);
+          fprintf(file, "</info>\n");
+      }
+  }
+
+  
+  
 }
 
 GBool HtmlOutputDev::dumpDocOutline(Catalog* catalog)
@@ -2155,13 +2176,14 @@ void HtmlPage::AddImage(GfxState *state, Object *ref, Stream *str,
 // Can we get information out of the ref?
 // do we need to transform? Probably.
 
-  double x = 0, y = 0, x1 = 0, y1 = 0;
+  double x = 0, y = 0, x1 = 0, y1 = 0, wt = 0, ht = 0;
   state->transform(state->getCurX(), state->getCurY(), &x, &y);
   state->transform(state->getCurX() + width, state->getCurY() + height, &x1, &y1);
-
+  state->transformDelta(1, 1, &wt, &ht);
+  
 #if 1
-  printf("AddImage %d, x1 = %lf, y1 = %lf, x = %lf, y = %lf, W = %lf, H = %lf, curx = %lf, cury = %lf\n",
-        pageNumber, x1, y1, x, y, x1-x, y1-y, state->getCurX(), state->getCurY());
+  printf("AddImage %d, x1 = %lf, y1 = %lf, x = %lf, y = %lf, W = %lf, H = %lf, curx = %lf, cury = %lf, wt = %lf, ht = %lf\n",
+         pageNumber, x1, y1, x, y, x1-x, y1-y, state->getCurX(), state->getCurY(), wt, ht);
 #endif  
 
   double wscale, hscale;
