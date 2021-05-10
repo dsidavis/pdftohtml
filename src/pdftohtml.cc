@@ -240,15 +240,14 @@ int main(int argc, char *argv[]) {
 
   doc->getDocInfo(&info);
   if (info.isDict()) {
-    docTitle = getInfoString(info.getDict(), "Title");
-    author = getInfoString(info.getDict(), "Author");
-    keywords = getInfoString(info.getDict(), "Keywords");
-    subject = getInfoString(info.getDict(), "Subject");
-    date = getInfoDate(info.getDict(), "ModDate");
-    if( !date )
-	date = getInfoDate(info.getDict(), "CreationDate");
+      docTitle = getInfoString(info.getDict(), "Title");
+      author = getInfoString(info.getDict(), "Author");
+      keywords = getInfoString(info.getDict(), "Keywords");
+      subject = getInfoString(info.getDict(), "Subject");
+      date = getInfoDate(info.getDict(), "ModDate");
+      if( !date )
+          date = getInfoDate(info.getDict(), "CreationDate");
   }
-  info.free();
   if( !docTitle ) docTitle = new GString(htmlFileName);
 
   /* determine extensions of output background images */
@@ -274,8 +273,9 @@ int main(int argc, char *argv[]) {
 	  extension,
 	  rawOrder, 
 	  firstPage,
-	  doc->getCatalog()->getOutline()->isDict());
+          doc->getCatalog()->getOutline()->isDict(), info.isDict() ? info.getDict() : NULL);
 
+  info.free();  
   delete docTitle;
   if( author )
   {   
