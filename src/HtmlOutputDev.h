@@ -300,7 +300,7 @@ public:
 	  char *extension,
 	  GBool rawOrder,
 	  int firstPage = 1,
-	  GBool outline = 0);
+	  GBool outline = 0, Dict *info = NULL);
 
   // Destructor.
   virtual ~HtmlOutputDev();
@@ -392,7 +392,7 @@ private:
   // recognized
   static char* mapEncodingToHtml(GString* encoding);
   GString* getLinkDest(Link *link,Catalog *catalog);
-  void dumpMetaVars(FILE *);
+  void dumpMetaVars(FILE *, Dict *);
   void doFrame(int firstPage);
   GBool newOutlineLevel(FILE *output, Object *node, Catalog* catalog, int level = 1);
 
