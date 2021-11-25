@@ -1887,7 +1887,11 @@ void HtmlOutputDev::dumpMetaVars(FILE *file, Dict *info)
           
           fprintf(file, "<info name=\"%s\" type=\"%d\" typeName=\"%s\">", key, val.getType(), val.getTypeName());
           //fprintf(file, "%s", val.getString()->getCString());
-          char *tmp = val.getString()->getCString();
+          char *tmp;
+          if(val.isName())
+              tmp = val.getName();
+          else
+              tmp = val.getString()->getCString();
           if(tmp) {
               GString *s = insertEntities(tmp);
               fprintf(file, "%s", s->getCString());
