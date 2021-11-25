@@ -188,9 +188,9 @@ int main(int argc, char *argv[]) {
 
   // construct text file name
   if (argc == 3) {
-      GString* tmp = new GString(argv[2]);
-      p = tmp->getCString() ;
-      int len = tmp->getLength();
+    GString* tmp = new GString(argv[2]);
+    p = tmp->getCString() ;
+    int len = tmp->getLength();
     if (!xml) {
       if(len > 5)
         p = p + len - 5;          
