@@ -2,7 +2,7 @@
 //
 // config.h
 //
-// Copyright 1996-2005 Glyph & Cog, LLC
+// Copyright 1996-2022 Glyph & Cog, LLC
 //
 //========================================================================
 
@@ -14,25 +14,25 @@
 //------------------------------------------------------------------------
 
 // xpdf version
-#define xpdfVersion          "3.01"
-#define xpdfVersionNum       3.01
-#define xpdfMajorVersion     3
-#define xpdfMinorVersion     1
+#define xpdfVersion          "4.04"
+#define xpdfVersionNum       4.04
+#define xpdfMajorVersion     4
+#define xpdfMinorVersion     4
 #define xpdfUpdateVersion    0
-#define xpdfMajorVersionStr  "3"
-#define xpdfMinorVersionStr  "1"
+#define xpdfMajorVersionStr  "4"
+#define xpdfMinorVersionStr  "4"
 #define xpdfUpdateVersionStr "0"
 
 // supported PDF version
-#define supportedPDFVersionStr "1.5"
-#define supportedPDFVersionNum 1.5
+#define supportedPDFVersionStr "2.0"
+#define supportedPDFVersionNum 2.0
 
 // copyright notice
-#define xpdfCopyright "Copyright 1996-2005 Glyph & Cog, LLC"
+#define xpdfCopyright "Copyright 1996-2022 Glyph & Cog, LLC"
 
 // Windows resource file stuff
-#define winxpdfVersion "WinXpdf 3.01"
-#define xpdfCopyrightAmp "Copyright 1996-2005 Glyph && Cog, LLC"
+#define winxpdfVersion "WinXpdf 4.04"
+#define xpdfCopyrightAmp "Copyright 1996-2022 Glyph && Cog, LLC"
 
 //------------------------------------------------------------------------
 // paper size
@@ -52,19 +52,21 @@
 //------------------------------------------------------------------------
 
 // user config file name, relative to the user's home directory
-#if defined(VMS) || (defined(WIN32) && !defined(__CYGWIN32__))
+#if defined(VMS) || defined(_WIN32)
 #define xpdfUserConfigFile "xpdfrc"
 #else
 #define xpdfUserConfigFile ".xpdfrc"
 #endif
 
 // system config file name (set via the configure script)
-#ifdef SYSTEM_XPDFRC
-#define xpdfSysConfigFile SYSTEM_XPDFRC
-#else
+#if defined(_WIN32)
 // under Windows, we get the directory with the executable and then
 // append this file name
 #define xpdfSysConfigFile "xpdfrc"
+#elif defined(SYSTEM_XPDFRC)
+#define xpdfSysConfigFile SYSTEM_XPDFRC
+#else
+#define xpdfSysConfigFile "/etc/xpdfrc"
 #endif
 
 //------------------------------------------------------------------------
@@ -73,12 +75,6 @@
 
 // default maximum size of color cube to allocate
 #define defaultRGBCube 5
-
-// number of fonts (combined t1lib, FreeType, X server) to cache
-#define xOutFontCacheSize 64
-
-// number of Type 3 fonts to cache
-#define xOutT3FontCacheSize 8
 
 //------------------------------------------------------------------------
 // popen
@@ -89,7 +85,7 @@
 #define pclose _pclose
 #endif
 
-#if defined(VMS) || defined(VMCMS) || defined(DOS) || defined(OS2) || defined(__EMX__) || defined(WIN32) || defined(__DJGPP__) || defined(MACOS)
+#if defined(VMS) || defined(VMCMS) || defined(DOS) || defined(OS2) || defined(__EMX__) || defined(_WIN32) || defined(__DJGPP__)
 #define POPEN_READ_MODE "rb"
 #else
 #define POPEN_READ_MODE "r"

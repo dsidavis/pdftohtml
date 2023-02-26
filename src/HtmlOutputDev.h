@@ -82,8 +82,10 @@ private:
   int strSize;
   int len;			// length of text and xRight
   int size;			// size of text and xRight arrays
+#ifdef HAVE_UNICODE_TEXT_DIRECTION
   UnicodeTextDirection dir;	// direction (left to right/right to left)
-
+#endif
+    
   double rotation_;
 
   friend class HtmlPage;

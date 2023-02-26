@@ -11,9 +11,10 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+#include "gmem.h"
+#include "gmempp.h"
 #include "parseargs.h"
 #include "GString.h"
-#include "gmem.h"
 #include "GlobalParams.h"
 #include "Object.h"
 #include "Stream.h"
@@ -30,8 +31,11 @@
 static int firstPage = 1;
 static int lastPage = 0;
 static GBool dumpJPEG = gFalse;
+static GBool dumpRaw = gFalse;
+static GBool list = gFalse;
 static char ownerPassword[33] = "\001";
 static char userPassword[33] = "\001";
+static GBool verbose = gFalse;
 static GBool quiet = gFalse;
 static char cfgFileName[256] = "";
 static GBool printVersion = gFalse;
@@ -44,10 +48,16 @@ static ArgDesc argDesc[] = {
    "last page to convert"},
   {"-j",      argFlag,     &dumpJPEG,      0,
    "write JPEG images as JPEG files"},
+  {"-raw",    argFlag,     &dumpRaw,       0,
+   "write raw data in PDF-native formats"},
+  {"-list",   argFlag,     &list,          0,
+   "write information to stdout for each image"},
   {"-opw",    argString,   ownerPassword,  sizeof(ownerPassword),
    "owner password (for encrypted files)"},
   {"-upw",    argString,   userPassword,   sizeof(userPassword),
    "user password (for encrypted files)"},
+  {"-verbose", argFlag,    &verbose,       0,
+   "print per-page status information"},
   {"-q",      argFlag,     &quiet,         0,
    "don't print any messages or errors"},
   {"-cfg",        argString,      cfgFileName,    sizeof(cfgFileName),
@@ -67,7 +77,7 @@ static ArgDesc argDesc[] = {
 
 int main(int argc, char *argv[]) {
   PDFDoc *doc;
-  GString *fileName;
+  char *fileName;
   char *imgRoot;
   GString *ownerPW, *userPW;
   ImageOutputDev *imgOut;
@@ -77,20 +87,28 @@ int main(int argc, char *argv[]) {
   exitCode = 99;
 
   // parse args
+  fixCommandLine(&argc, &argv);
   ok = parseArgs(argDesc, &argc, argv);
   if (!ok || argc != 3 || printVersion || printHelp) {
-    fprintf(stderr, "pdfimages version %s\n", xpdfVersion);
+    fprintf(stderr, "pdfimages version %s [www.xpdfreader.com]\n", xpdfVersion);
     fprintf(stderr, "%s\n", xpdfCopyright);
     if (!printVersion) {
       printUsage("pdfimages", "<PDF-file> <image-root>", argDesc);
     }
     goto err0;
   }
-  fileName = new GString(argv[1]);
+  fileName = argv[1];
   imgRoot = argv[2];
 
   // read config file
+  if (cfgFileName[0] && !pathIsFile(cfgFileName)) {
+    error(errConfig, -1, "Config file '{0:s}' doesn't exist or isn't a file",
+	  cfgFileName);
+  }
   globalParams = new GlobalParams(cfgFileName);
+  if (verbose) {
+    globalParams->setPrintStatusInfo(verbose);
+  }
   if (quiet) {
     globalParams->setErrQuiet(quiet);
   }
@@ -120,7 +138,8 @@ int main(int argc, char *argv[]) {
 
   // check for copy permission
   if (!doc->okToCopy()) {
-    error(-1, "Copying of images from this document is not allowed.");
+    error(errNotAllowed, -1,
+	  "Copying of images from this document is not allowed.");
     exitCode = 3;
     goto err1;
   }
@@ -132,7 +151,7 @@ int main(int argc, char *argv[]) {
     lastPage = doc->getNumPages();
 
   // write image files
-  imgOut = new ImageOutputDev(imgRoot, dumpJPEG);
+  imgOut = new ImageOutputDev(imgRoot, dumpJPEG, dumpRaw, list);
   if (imgOut->isOk()) {
     doc->displayPages(imgOut, firstPage, lastPage, 72, 72, 0,
 		      gFalse, gTrue, gFalse);

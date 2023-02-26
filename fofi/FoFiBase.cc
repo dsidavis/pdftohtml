@@ -13,7 +13,9 @@
 #endif
 
 #include <stdio.h>
+#include <limits.h>
 #include "gmem.h"
+#include "gmempp.h"
 #include "FoFiBase.h"
 
 //------------------------------------------------------------------------
@@ -42,6 +44,10 @@ char *FoFiBase::readFile(char *fileName, int *fileLen) {
   }
   fseek(f, 0, SEEK_END);
   n = (int)ftell(f);
+  if (n < 0) {
+    fclose(f);
+    return NULL;
+  }
   fseek(f, 0, SEEK_SET);
   buf = (char *)gmalloc(n);
   if ((int)fread(buf, 1, n, f) != n) {
@@ -79,7 +85,7 @@ int FoFiBase::getU8(int pos, GBool *ok) {
 int FoFiBase::getS16BE(int pos, GBool *ok) {
   int x;
 
-  if (pos < 0 || pos+1 >= len) {
+  if (pos < 0 || pos > INT_MAX - 1 || pos+1 >= len) {
     *ok = gFalse;
     return 0;
   }
@@ -94,7 +100,7 @@ int FoFiBase::getS16BE(int pos, GBool *ok) {
 int FoFiBase::getU16BE(int pos, GBool *ok) {
   int x;
 
-  if (pos < 0 || pos+1 >= len) {
+  if (pos < 0 || pos > INT_MAX - 1 || pos+1 >= len) {
     *ok = gFalse;
     return 0;
   }
@@ -106,7 +112,7 @@ int FoFiBase::getU16BE(int pos, GBool *ok) {
 int FoFiBase::getS32BE(int pos, GBool *ok) {
   int x;
 
-  if (pos < 0 || pos+3 >= len) {
+  if (pos < 0 || pos > INT_MAX - 3 || pos+3 >= len) {
     *ok = gFalse;
     return 0;
   }
@@ -123,7 +129,7 @@ int FoFiBase::getS32BE(int pos, GBool *ok) {
 Guint FoFiBase::getU32BE(int pos, GBool *ok) {
   Guint x;
 
-  if (pos < 0 || pos+3 >= len) {
+  if (pos < 0 || pos > INT_MAX - 3 || pos+3 >= len) {
     *ok = gFalse;
     return 0;
   }
@@ -134,11 +140,25 @@ Guint FoFiBase::getU32BE(int pos, GBool *ok) {
   return x;
 }
 
+Guint FoFiBase::getU32LE(int pos, GBool *ok) {
+  Guint x;
+
+  if (pos < 0 || pos > INT_MAX - 3 || pos+3 >= len) {
+    *ok = gFalse;
+    return 0;
+  }
+  x = file[pos+3];
+  x = (x << 8) + file[pos+2];
+  x = (x << 8) + file[pos+1];
+  x = (x << 8) + file[pos];
+  return x;
+}
+
 Guint FoFiBase::getUVarBE(int pos, int size, GBool *ok) {
   Guint x;
   int i;
 
-  if (pos < 0 || pos + size > len) {
+  if (pos < 0 || pos > INT_MAX - size || pos + size > len) {
     *ok = gFalse;
     return 0;
   }
@@ -151,6 +171,7 @@ Guint FoFiBase::getUVarBE(int pos, int size, GBool *ok) {
 
 GBool FoFiBase::checkRegion(int pos, int size) {
   return pos >= 0 &&
-         pos + size >= pos &&
+         size >= 0 &&
+         size <= INT_MAX - pos &&
          pos + size <= len;
 }

@@ -13,6 +13,7 @@
 #endif
 
 #include <stddef.h>
+#include "gmempp.h"
 #include "Object.h"
 #include "Array.h"
 #include "Dict.h"
@@ -24,7 +25,7 @@
 // Object
 //------------------------------------------------------------------------
 
-char *objTypeNames[numObjTypes] = {
+const char *objTypeNames[numObjTypes] = {
   "boolean",
   "integer",
   "real",
@@ -42,9 +43,14 @@ char *objTypeNames[numObjTypes] = {
 };
 
 #ifdef DEBUG_MEM
-int Object::numAlloc[numObjTypes] =
+#if MULTITHREADED
+GAtomicCounter Object::numAlloc[numObjTypes] =
+  {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+#else
+long Object::numAlloc[numObjTypes] =
   {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 #endif
+#endif // DEBUG_MEM
 
 Object *Object::initArray(XRef *xref) {
   initObj(objArray);
@@ -87,7 +93,7 @@ Object *Object::copy(Object *obj) {
     dict->incRef();
     break;
   case objStream:
-    stream->incRef();
+    obj->stream = stream->copy();
     break;
   case objCmd:
     obj->cmd = copyString(cmd);
@@ -96,14 +102,18 @@ Object *Object::copy(Object *obj) {
     break;
   }
 #ifdef DEBUG_MEM
+#if MULTITHREADED
+  gAtomicIncrement(&numAlloc[type]);
+#else
   ++numAlloc[type];
+#endif
 #endif
   return obj;
 }
 
-Object *Object::fetch(XRef *xref, Object *obj) {
+Object *Object::fetch(XRef *xref, Object *obj, int recursion) {
   return (type == objRef && xref) ?
-         xref->fetch(ref.num, ref.gen, obj) : copy(obj);
+         xref->fetch(ref.num, ref.gen, obj, recursion) : copy(obj);
 }
 
 void Object::free() {
@@ -125,9 +135,7 @@ void Object::free() {
     }
     break;
   case objStream:
-    if (!stream->decRef()) {
-      delete stream;
-    }
+    delete stream;
     break;
   case objCmd:
     gfree(cmd);
@@ -136,12 +144,16 @@ void Object::free() {
     break;
   }
 #ifdef DEBUG_MEM
+#if MULTITHREADED
+  gAtomicDecrement(&numAlloc[type]);
+#else
   --numAlloc[type];
+#endif
 #endif
   type = objNone;
 }
 
-char *Object::getTypeName() {
+const char *Object::getTypeName() {
   return objTypeNames[type];
 }
 
@@ -215,16 +227,18 @@ void Object::print(FILE *f) {
 void Object::memCheck(FILE *f) {
 #ifdef DEBUG_MEM
   int i;
-  int t;
+  long t;
 
   t = 0;
-  for (i = 0; i < numObjTypes; ++i)
+  for (i = 0; i < numObjTypes; ++i) {
     t += numAlloc[i];
+  }
   if (t > 0) {
     fprintf(f, "Allocated objects:\n");
     for (i = 0; i < numObjTypes; ++i) {
-      if (numAlloc[i] > 0)
-	fprintf(f, "  %-20s: %6d\n", objTypeNames[i], numAlloc[i]);
+      if (numAlloc[i] > 0) {
+	fprintf(f, "  %-20s: %6ld\n", objTypeNames[i], numAlloc[i]);
+      }
     }
   }
 #endif

@@ -34,13 +34,6 @@ enum UnicodeMapKind {
   unicodeMapFunc		// function pointer
 };
 
-enum UnicodeTextDirection {
-  textDirUnknown,
-  textDirLeftRight,
-  textDirRightLeft,
-  textDirTopBottom
-};
-
 typedef int (*UnicodeMapFunc)(Unicode u, char *buf, int bufSize);
 
 struct UnicodeMapRange {
@@ -60,12 +53,12 @@ public:
   static UnicodeMap *parse(GString *encodingNameA);
 
   // Create a resident UnicodeMap.
-  UnicodeMap(char *encodingNameA, GBool unicodeOutA,
+  UnicodeMap(const char *encodingNameA, GBool unicodeOutA,
 	     UnicodeMapRange *rangesA, int lenA);
 
   // Create a resident UnicodeMap that uses a function instead of a
   // list of ranges.
-  UnicodeMap(char *encodingNameA, GBool unicodeOutA,
+  UnicodeMap(const char *encodingNameA, GBool unicodeOutA,
 	     UnicodeMapFunc funcA);
 
   ~UnicodeMap();
@@ -87,10 +80,6 @@ public:
   // Returns 0 if no mapping is found.
   int mapUnicode(Unicode u, char *buf, int bufSize);
 
-  // determines the direction of the text by checking 
-  // unicode ranges
-  static enum UnicodeTextDirection getDirection(Unicode u);
-
 private:
 
   UnicodeMap(GString *encodingNameA);
@@ -105,9 +94,10 @@ private:
   int len;			// (user, resident)
   UnicodeMapExt *eMaps;		// (user)
   int eMapsLen;			// (user)
-  int refCnt;
 #if MULTITHREADED
-  GMutex mutex;
+  GAtomicCounter refCnt;
+#else
+  int refCnt;
 #endif
 };
 

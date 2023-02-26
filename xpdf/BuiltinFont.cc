@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "gmem.h"
+#include "gmempp.h"
 #include "FontEncodingTables.h"
 #include "BuiltinFont.h"
 
@@ -39,7 +40,7 @@ BuiltinFontWidths::~BuiltinFontWidths() {
   gfree(tab);
 }
 
-GBool BuiltinFontWidths::getWidth(char *name, Gushort *width) {
+GBool BuiltinFontWidths::getWidth(const char *name, Gushort *width) {
   int h;
   BuiltinFontWidth *p;
 
@@ -50,11 +51,12 @@ GBool BuiltinFontWidths::getWidth(char *name, Gushort *width) {
       return gTrue;
     }
   }
+  *width = 0;
   return gFalse;
 }
 
-int BuiltinFontWidths::hash(char *name) {
-  char *p;
+int BuiltinFontWidths::hash(const char *name) {
+  const char *p;
   unsigned int h;
 
   h = 0;

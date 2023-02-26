@@ -182,7 +182,7 @@ int main(int argc, char *argv[]) {
 
   // check for copy permission
   if (!doc->okToCopy() && !forceCopy) {
-    error(-1, "Copying of text from this document is not allowed.");
+    error(errNotAllowed, 0, "Copying of text from this document is not allowed.");
     goto error;
   }
 
@@ -321,9 +321,18 @@ int main(int argc, char *argv[]) {
 
     globalParams->setPSPaperWidth(w);
     globalParams->setPSPaperHeight(h);
+#if OLD_VERSION                                
     globalParams->setPSNoText(gTrue);
-    psOut = new PSOutputDev(psFileName->getCString(), doc->getXRef(),
-			    doc->getCatalog(), firstPage, lastPage, psModePS);
+#endif
+    
+    psOut = new PSOutputDev(psFileName->getCString(),
+#if OLD_VERSION                            
+                            doc->getXRef(),
+			    doc->getCatalog(),
+#else
+                            doc, 
+#endif                            
+                            firstPage, lastPage, psModePS);
    // doc->displayPages(psOut, firstPage, lastPage, static_cast<int>(72*scale), static_cast<int>(72*scale), 0, gTrue, gTrue);
 	doc->displayPages(psOut, firstPage, lastPage, static_cast<int>(72*scale), static_cast<int>(72*scale), 0, gTrue, gTrue,gTrue,NULL);
     delete psOut;
@@ -354,7 +363,7 @@ int main(int argc, char *argv[]) {
     gsCmd->append("\"");
 //    printf("running: %s\n", gsCmd->getCString());
     if( !executeCommand(gsCmd->getCString()) && !errQuiet) {
-      error(-1, "Failed to launch Ghostscript!\n");
+       error(errCommandLine, 0, "Failed to launch Ghostscript!\n");
     }
     unlink(psFileName->getCString());
     delete tw;

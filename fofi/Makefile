@@ -36,7 +36,8 @@ CXX_SRC = \
 	$(srcdir)/FoFiEncodings.cc \
 	$(srcdir)/FoFiTrueType.cc \
 	$(srcdir)/FoFiType1.cc \
-	$(srcdir)/FoFiType1C.cc
+	$(srcdir)/FoFiType1C.cc \
+	$(srcdir)/FoFiIdentifier.cc
 
 #------------------------------------------------------------------------
 
@@ -49,7 +50,8 @@ FOFI_OBJS = \
 	FoFiEncodings.o \
 	FoFiTrueType.o \
 	FoFiType1.o \
-	FoFiType1C.o
+	FoFiType1C.o \
+	FoFiIdentifier.o	
 
 $(LIBPREFIX)fofi.a: $(FOFI_OBJS)
 	rm -f $(LIBPREFIX)fofi.a

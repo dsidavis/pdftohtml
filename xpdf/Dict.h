@@ -15,16 +15,16 @@
 #pragma interface
 #endif
 
+#if MULTITHREADED
+#include "GMutex.h"
+#endif
 #include "Object.h"
+
+struct DictEntry;
 
 //------------------------------------------------------------------------
 // Dict
 //------------------------------------------------------------------------
-
-struct DictEntry {
-  char *key;
-  Object val;
-};
 
 class Dict {
 public:
@@ -36,8 +36,13 @@ public:
   ~Dict();
 
   // Reference counting.
-  int incRef() { return ++ref; }
-  int decRef() { return --ref; }
+#if MULTITHREADED
+  long incRef() { return gAtomicIncrement(&ref); }
+  long decRef() { return gAtomicDecrement(&ref); }
+#else
+  long incRef() { return ++ref; }
+  long decRef() { return --ref; }
+#endif
 
   // Get number of entries.
   int getLength() { return length; }
@@ -46,12 +51,12 @@ public:
   void add(char *key, Object *val);
 
   // Check if dictionary is of specified type.
-  GBool is(char *type);
+  GBool is(const char *type);
 
   // Look up an entry and return the value.  Returns a null object
   // if <key> is not in the dictionary.
-  Object *lookup(char *key, Object *obj);
-  Object *lookupNF(char *key, Object *obj);
+  Object *lookup(const char *key, Object *obj, int recursion = 0);
+  Object *lookupNF(const char *key, Object *obj);
 
   // Iterative accessors.
   char *getKey(int i);
@@ -67,11 +72,18 @@ private:
 
   XRef *xref;			// the xref table for this PDF file
   DictEntry *entries;		// array of entries
+  DictEntry **hashTab;		// hash table pointers
   int size;			// size of <entries> array
   int length;			// number of entries in dictionary
-  int ref;			// reference count
+#if MULTITHREADED
+  GAtomicCounter ref;		// reference count
+#else
+  long ref;			// reference count
+#endif
 
-  DictEntry *find(char *key);
+  DictEntry *find(const char *key);
+  void expand();
+  int hash(const char *key);
 };
 
 #endif

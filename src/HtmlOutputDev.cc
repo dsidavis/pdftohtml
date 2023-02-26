@@ -143,7 +143,9 @@ HtmlString::HtmlString(GfxState *state, double fontSize, double _charspace, Html
   strSize = 0;
   htext = new GString();
   htext2 = new GString();
+#ifdef HAVE_UNICODE_TEXT_DIRECTION  
   dir = textDirUnknown;
+#endif  
   rotation_ = rotation;
 }
 
@@ -158,10 +160,12 @@ HtmlString::~HtmlString() {
 
 void HtmlString::addChar(GfxState *state, double x, double y,
 			 double dx, double dy, Unicode u) {
+#ifdef HAVE_UNICODE_TEXT_DIRECTION
   if (dir == textDirUnknown) {
     dir = UnicodeMap::getDirection(u);
   } 
-
+#endif
+  
   if (len == size) {
     size += 16;
     text = (Unicode *)grealloc(text, size * sizeof(Unicode));
@@ -180,6 +184,7 @@ void HtmlString::addChar(GfxState *state, double x, double y,
 
 void HtmlString::endString()
 {
+#ifdef HAVE_UNICODE_TEXT_DIRECTION    
   if( dir == textDirRightLeft && len > 1 )
   {
     //printf("will reverse!\n");
@@ -190,6 +195,7 @@ void HtmlString::endString()
       text[len - i - 1] = ch;
     }
   }
+#endif  
 }
 
 //------------------------------------------------------------------------
@@ -540,7 +546,11 @@ void HtmlPage::coalesce() {
        	 (vertSpace >= 0 && vertSpace < 0.5 * space && addLineBreak)
 	) &&
  // in complex mode fonts must be the same, in other modes fonts do not metter
+#ifdef HAVE_UNICODE_TEXT_DIRECTION          
 	str1->dir == str2->dir // text direction the same
+#else
+          1
+#endif        
         && str2->fontpos == str1->fontpos
        ) 
     {
@@ -957,7 +967,7 @@ void HtmlPage::dumpComplex(FILE *file, int page){
       delete pgNum;
   
       if (!(pageFile = fopen(tmp->getCString(), "w"))) {
-	  error(-1, "Couldn't open html file '%s'", tmp->getCString());
+	  error(errIO, 0, "Couldn't open html file '%s'", tmp->getCString());
 	  delete tmp;
 	  return;
       } 
@@ -1210,7 +1220,7 @@ void HtmlOutputDev::doFrame(int firstPage){
 
   if (!(fContentsFrame = fopen(fName->getCString(), "w"))){
     delete fName;
-    error(-1, "Couldn't open html file '%s'", fName->getCString());
+    error(errIO, 0, "Couldn't open html file '%s'", fName->getCString());
     return;
   }
   
@@ -1289,7 +1299,7 @@ HtmlOutputDev::HtmlOutputDev(char *pdfFileName, char *fileName, char *title,
    
      if (!(fContentsFrame = fopen(left->getCString(), "w")))
 	 {
-        error(-1, "Couldn't open html file '%s'", left->getCString());
+           error(errIO, 0, "Couldn't open html file '%s'", left->getCString());
 		delete left;
         return;
      }
@@ -1311,7 +1321,7 @@ HtmlOutputDev::HtmlOutputDev(char *pdfFileName, char *fileName, char *title,
        right->append("s.html");
 
        if (!(page=fopen(right->getCString(),"w"))){
-        error(-1, "Couldn't open html file '%s'", right->getCString());
+           error(errIO, 0, "Couldn't open html file '%s'", right->getCString());
         delete right;
 		return;
        }
@@ -1329,7 +1339,7 @@ HtmlOutputDev::HtmlOutputDev(char *pdfFileName, char *fileName, char *title,
       if (xml) right->append(".xml");
       if (!(page=fopen(right->getCString(),"w"))){
 	delete right;
-	error(-1, "Couldn't open html file '%s'", right->getCString());
+	error(errIO, 0, "Couldn't open html file '%s'", right->getCString());
 	return;
       }  
       delete right;
@@ -1523,11 +1533,16 @@ void HtmlOutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str,
   int i, j;
   
 
-  if (ignore||complexMode) {
+  if (ignore || complexMode) {
     pages->AddImage(state, ref, str, width, height, NULL, NULL, inlineImg);
     if(!HtmlOutputDev::outputImages)
       outputImage(state, ref, str);
-    OutputDev::drawImageMask(state, ref, str, width, height, invert, inlineImg);
+
+    OutputDev::drawImageMask(state, ref, str, width, height, invert, inlineImg
+#ifndef OLD_VERSION
+                             ,    true // interpolate
+#endif    
+        );
     return;
   }
   
@@ -1588,7 +1603,7 @@ void HtmlOutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str,
     fName->append(pgNum)->append("_")->append(imgnum)->append(".jpg");
     ++imgNum;
     if (!(f1 = fopen(fName->getCString(), "wb"))) {
-      error(-1, "Couldn't open image file '%s'", fName->getCString());
+      error(errIO, 0, "Couldn't open image file '%s'", fName->getCString());
       return;
     }
 
@@ -1607,7 +1622,11 @@ void HtmlOutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str,
   if (fName) delete fName;
   }
   else {
-    OutputDev::drawImageMask(state, ref, str, width, height, invert, inlineImg);
+    OutputDev::drawImageMask(state, ref, str, width, height, invert, inlineImg
+#ifndef OLD_VERSION
+                             ,    true // interpolate
+#endif    
+        );
   }
 }
 
@@ -1634,7 +1653,12 @@ void HtmlOutputDev::drawImage(GfxState *state, Object *ref, Stream *str,
 
   if (ignore||complexMode) {
     OutputDev::drawImage(state, ref, str, width, height, colorMap, 
-			 maskColors, inlineImg);
+			 maskColors, inlineImg
+#ifdef OLD_VERSION
+#else                         
+                         , true
+#endif
+        ); 
     return;
   }
 
@@ -1703,7 +1727,7 @@ void HtmlOutputDev::drawImage(GfxState *state, Object *ref, Stream *str,
     ++imgNum;
     
     if (!(f1 = fopen(fName->getCString(), "wb"))) {
-      error(-1, "Couldn't open image file '%s'", fName->getCString());
+      error(errIO, 0, "Couldn't open image file '%s'", fName->getCString());
       return;
     }
 
@@ -1723,7 +1747,12 @@ void HtmlOutputDev::drawImage(GfxState *state, Object *ref, Stream *str,
   }
   else {
     OutputDev::drawImage(state, ref, str, width, height, colorMap,
-			 maskColors, inlineImg);
+			 maskColors, inlineImg
+#ifdef OLD_VERSION
+#else                         
+                         , true
+#endif
+        );
   }
 }
 
@@ -1732,8 +1761,12 @@ void HtmlOutputDev::drawImage(GfxState *state, Object *ref, Stream *str,
 void HtmlOutputDev::drawLink(Link* link,Catalog *cat){
   double _x1,_y1,_x2,_y2,w;
   int x1,y1,x2,y2;
-  
+#ifdef OLD_VERSION  
   link->getBorder(&_x1,&_y1,&_x2,&_y2,&w);
+#else
+  link->getRect(&_x1,&_y1,&_x2,&_y2);
+#endif
+  
   cvtUserToDev(_x1,_y1,&x1,&y1);
   
   cvtUserToDev(_x2,_y2,&x2,&y2); 
@@ -2110,7 +2143,12 @@ showColorSpaceInfo(GfxColorSpace *colsp, GfxState *state, int isfill = 1)
   {
       GfxColor col;
       GfxRGB rgb;
-      ((GfxICCBasedColorSpace *)colsp)->getRGB(isfill ? state->getFillColor() : state->getStrokeColor(),  &rgb);
+      ((GfxICCBasedColorSpace *)colsp)->getRGB(isfill ? state->getFillColor() : state->getStrokeColor(),  &rgb
+#ifdef OLD_VERSION
+#else                                               
+                                               , gfxRenderingIntentAbsoluteColorimetric
+#endif                                               
+          );
       fprintf(stderr, "icc: rgb = %d, %d, %d\n", rgb.r, rgb.g, rgb.b);
 //      for(int i = 0; i < n; i++) {     }
   }       
@@ -2162,8 +2200,12 @@ HtmlPage::transformPath(GfxSubpath *sp, GfxState *state)
         x = sp->getX(i);
         y = sp->getY(i);
         state->transform(x, y, &nx, &ny);
+#ifdef OLD_VERSION        
         sp->setX(i, nx);
         sp->setY(i, ny);
+#else
+#pragma message "Need to fix transformPath() for new version of xpdf"        
+#endif        
     }
 }
 
@@ -2321,8 +2363,18 @@ void HtmlOutputDev::updateTextPos(GfxState *state)
 
 PathStateInfo::PathStateInfo(GfxState *state)
 {
-    state->getFillColorSpace()->getRGB(state->getFillColor(), &fill);
-    state->getStrokeColorSpace()->getRGB(state->getStrokeColor(), &stroke);
+    state->getFillColorSpace()->getRGB(state->getFillColor(), &fill
+#ifdef OLD_VERSION
+#else                                       
+                                       , gfxRenderingIntentAbsoluteColorimetric
+#endif
+        );
+    state->getStrokeColorSpace()->getRGB(state->getStrokeColor(), &stroke
+#ifdef OLD_VERSION
+#else                                       
+                                       , gfxRenderingIntentAbsoluteColorimetric
+#endif
+        );
     lineWidth = state->getLineWidth();
 
     double *dashes;
@@ -2425,7 +2477,7 @@ HtmlOutputDev::outputImage(GfxState *state, Object *ref, Stream *str)
     ++imgNum;
     
     if (!(f1 = fopen(fName->getCString(), "wb"))) {
-      error(-1, "Couldn't open image file '%s'", fName->getCString());
+      error(errIO, 0, "Couldn't open image file '%s'", fName->getCString());
       return;
     }
 
