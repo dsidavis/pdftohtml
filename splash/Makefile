@@ -48,11 +48,13 @@ CXX_SRC = \
 	$(srcdir)/SplashPattern.cc \
 	$(srcdir)/SplashScreen.cc \
 	$(srcdir)/SplashState.cc \
-	$(srcdir)/SplashT1Font.cc \
-	$(srcdir)/SplashT1FontEngine.cc \
-	$(srcdir)/SplashT1FontFile.cc \
 	$(srcdir)/SplashXPath.cc \
 	$(srcdir)/SplashXPathScanner.cc
+
+
+#	$(srcdir)/SplashT1Font.cc \
+#	$(srcdir)/SplashT1FontEngine.cc \
+#	$(srcdir)/SplashT1FontFile.cc \
 
 #------------------------------------------------------------------------
 
@@ -75,11 +77,13 @@ SPLASH_OBJS = \
 	SplashPattern.o \
 	SplashScreen.o \
 	SplashState.o \
-	SplashT1Font.o \
-	SplashT1FontEngine.o \
-	SplashT1FontFile.o \
 	SplashXPath.o \
 	SplashXPathScanner.o
+
+
+#	SplashT1Font.o \
+#	SplashT1FontEngine.o \
+#	SplashT1FontFile.o \
 
 $(LIBPREFIX)splash.a: $(SPLASH_OBJS)
 	rm -f $(LIBPREFIX)splash.a
