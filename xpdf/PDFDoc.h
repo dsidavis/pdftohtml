@@ -27,6 +27,9 @@ class Links;
 class LinkAction;
 class LinkDest;
 class Outline;
+class OutlineItem;
+class OptionalContent;
+class PDFCore;
 
 //------------------------------------------------------------------------
 // PDFDoc
@@ -36,13 +39,21 @@ class PDFDoc {
 public:
 
   PDFDoc(GString *fileNameA, GString *ownerPassword = NULL,
-	 GString *userPassword = NULL, void *guiDataA = NULL);
-#ifdef WIN32
+	 GString *userPassword = NULL, PDFCore *coreA = NULL);
+
+#ifdef _WIN32
   PDFDoc(wchar_t *fileNameA, int fileNameLen, GString *ownerPassword = NULL,
-	 GString *userPassword = NULL, void *guiDataA = NULL);
+	 GString *userPassword = NULL, PDFCore *coreA = NULL);
 #endif
+
+  // This version takes a UTF-8 file name (which is only relevant on
+  // Windows).
+  PDFDoc(char *fileNameA, GString *ownerPassword = NULL,
+	 GString *userPassword = NULL, PDFCore *coreA = NULL);
+
   PDFDoc(BaseStream *strA, GString *ownerPassword = NULL,
-	 GString *userPassword = NULL, void *guiDataA = NULL);
+	 GString *userPassword = NULL, PDFCore *coreA = NULL);
+
   ~PDFDoc();
 
   // Was PDF document successfully opened?
@@ -53,6 +64,9 @@ public:
 
   // Get file name.
   GString *getFileName() { return fileName; }
+#ifdef _WIN32
+  wchar_t *getFileNameU() { return fileNameU; }
+#endif
 
   // Get the xref table.
   XRef *getXRef() { return xref; }
@@ -86,23 +100,23 @@ public:
   Object *getStructTreeRoot() { return catalog->getStructTreeRoot(); }
 
   // Display a page.
-  void displayPage(OutputDev *out, int page, double hDPI, double vDPI,
-		   int rotate, GBool useMediaBox, GBool crop,
-		   GBool doLinks,
+  void displayPage(OutputDev *out, int page,
+		   double hDPI, double vDPI, int rotate,
+		   GBool useMediaBox, GBool crop, GBool printing,
 		   GBool (*abortCheckCbk)(void *data) = NULL,
 		   void *abortCheckCbkData = NULL);
 
   // Display a range of pages.
   void displayPages(OutputDev *out, int firstPage, int lastPage,
 		    double hDPI, double vDPI, int rotate,
-		    GBool useMediaBox, GBool crop, GBool doLinks,
+		    GBool useMediaBox, GBool crop, GBool printing,
 		    GBool (*abortCheckCbk)(void *data) = NULL,
 		    void *abortCheckCbkData = NULL);
 
   // Display part of a page.
   void displayPageSlice(OutputDev *out, int page,
 			double hDPI, double vDPI, int rotate,
-			GBool useMediaBox, GBool crop, GBool doLinks,
+			GBool useMediaBox, GBool crop, GBool printing,
 			int sliceX, int sliceY, int sliceW, int sliceH,
 			GBool (*abortCheckCbk)(void *data) = NULL,
 			void *abortCheckCbkData = NULL);
@@ -113,17 +127,27 @@ public:
 
   // Returns the links for the current page, transferring ownership to
   // the caller.
-  Links *takeLinks();
+  Links *getLinks(int page);
 
   // Find a named destination.  Returns the link destination, or
   // NULL if <name> is not a destination.
   LinkDest *findDest(GString *name)
     { return catalog->findDest(name); }
 
+  // Process the links for a page.
+  void processLinks(OutputDev *out, int page);
+
 #ifndef DISABLE_OUTLINE
   // Return the outline object.
   Outline *getOutline() { return outline; }
+
+  // Return the target page number for an outline item.  Returns 0 if
+  // the item doesn't target a page in this PDF file.
+  int getOutlineTargetPage(OutlineItem *outlineItem);
 #endif
+
+  // Return the OptionalContent object.
+  OptionalContent *getOptionalContent() { return optContent; }
 
   // Is the file encrypted?
   GBool isEncrypted() { return xref->isEncrypted(); }
@@ -138,6 +162,10 @@ public:
   GBool okToAddNotes(GBool ignoreOwnerPW = gFalse)
     { return xref->okToAddNotes(ignoreOwnerPW); }
 
+  // Is the PDF file damaged?  This checks to see if the xref table
+  // was constructed by the repair code.
+  GBool isDamaged() { return xref->isRepaired(); }
+
   // Is this document linearized?
   GBool isLinearized();
 
@@ -151,29 +179,47 @@ public:
   // Save this file with another name.
   GBool saveAs(GString *name);
 
-  // Return a pointer to the GUI (XPDFCore or WinPDFCore object).
-  void *getGUIData() { return guiData; }
+  // Return a pointer to the PDFCore object.
+  PDFCore *getCore() { return core; }
+
+  // Get the list of embedded files.
+  int getNumEmbeddedFiles() { return catalog->getNumEmbeddedFiles(); }
+  Unicode *getEmbeddedFileName(int idx)
+    { return catalog->getEmbeddedFileName(idx); }
+  int getEmbeddedFileNameLength(int idx)
+    { return catalog->getEmbeddedFileNameLength(idx); }
+  GBool saveEmbeddedFile(int idx, const char *path);
+  GBool saveEmbeddedFileU(int idx, const char *path);
+#ifdef _WIN32
+  GBool saveEmbeddedFile(int idx, const wchar_t *path, int pathLen);
+#endif
+  char *getEmbeddedFileMem(int idx, int *size);
 
 
 private:
 
+  void init(PDFCore *coreA);
   GBool setup(GString *ownerPassword, GString *userPassword);
+  GBool setup2(GString *ownerPassword, GString *userPassword,
+	       GBool repairXRef);
   void checkHeader();
   GBool checkEncryption(GString *ownerPassword, GString *userPassword);
-  void getLinks(Page *page);
+  GBool saveEmbeddedFile2(int idx, FILE *f);
 
   GString *fileName;
+#ifdef _WIN32
+  wchar_t *fileNameU;
+#endif
   FILE *file;
   BaseStream *str;
-  void *guiData;
+  PDFCore *core;
   double pdfVersion;
   XRef *xref;
   Catalog *catalog;
-  Links *links;
 #ifndef DISABLE_OUTLINE
   Outline *outline;
 #endif
-
+  OptionalContent *optContent;
 
   GBool ok;
   int errCode;

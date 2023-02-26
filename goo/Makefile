@@ -11,10 +11,8 @@ SHELL = /bin/sh
 
 srcdir = .
 
-CFLAGS += $(DEBUG) -DHAVE_CONFIG_H -I.. -I$(srcdir) 
-#-g -DDEBUG_MEM
-CXXFLAGS += $(DEBUG) -DHAVE_CONFIG_H -I.. -I$(srcdir) 
-#-g -DDEBUG_MEM
+CFLAGS += $(DEBUG) -DHAVE_CONFIG_H -I.. -I$(srcdir) -g # -DDEBUG_MEM
+CXXFLAGS += $(DEBUG) -DHAVE_CONFIG_H -I.. -I$(srcdir) -g # -DDEBUG_MEM
 
 CC ?= cc
 CXX ?= c++

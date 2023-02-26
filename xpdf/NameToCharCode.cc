@@ -14,6 +14,7 @@
 
 #include <string.h>
 #include "gmem.h"
+#include "gmempp.h"
 #include "NameToCharCode.h"
 
 //------------------------------------------------------------------------
@@ -47,7 +48,7 @@ NameToCharCode::~NameToCharCode() {
   gfree(tab);
 }
 
-void NameToCharCode::add(char *name, CharCode c) {
+void NameToCharCode::add(const char *name, CharCode c) {
   NameToCharCodeEntry *oldTab;
   int h, i, oldSize;
 
@@ -89,7 +90,7 @@ void NameToCharCode::add(char *name, CharCode c) {
   ++len;
 }
 
-CharCode NameToCharCode::lookup(char *name) {
+CharCode NameToCharCode::lookup(const char *name) {
   int h;
 
   h = hash(name);
@@ -104,8 +105,8 @@ CharCode NameToCharCode::lookup(char *name) {
   return 0;
 }
 
-int NameToCharCode::hash(char *name) {
-  char *p;
+int NameToCharCode::hash(const char *name) {
+  const char *p;
   unsigned int h;
 
   h = 0;

@@ -32,6 +32,9 @@ enum LinkActionKind {
   actionURI,			// URI
   actionNamed,			// named action
   actionMovie,			// movie action
+  actionJavaScript,		// run JavaScript
+  actionSubmitForm,		// submit form
+  actionHide,			// hide annotation
   actionUnknown			// anything else
 };
 
@@ -110,8 +113,10 @@ private:
   double left, bottom;		// position
   double right, top;
   double zoom;			// zoom factor
-  GBool changeLeft, changeTop;	// for destXYZ links, which position
-  GBool changeZoom;		//   components to change
+  GBool changeLeft, changeTop;	// which position components to change:
+  GBool changeZoom;		//   destXYZ uses all three;
+				//   destFitH/BH use changeTop;
+				//   destFitV/BV use changeLeft
   GBool ok;			// set if created successfully
 
   LinkDest(LinkDest *dest);
@@ -242,8 +247,10 @@ public:
 
   virtual ~LinkNamed();
 
+  // Was the LinkNamed created successfully?
   virtual GBool isOk() { return name != NULL; }
 
+  // Accessors.
   virtual LinkActionKind getKind() { return actionNamed; }
   GString *getName() { return name; }
 
@@ -263,8 +270,10 @@ public:
 
   virtual ~LinkMovie();
 
+  // Was the LinkMovie created successfully?
   virtual GBool isOk() { return annotRef.num >= 0 || title != NULL; }
 
+  // Accessors.
   virtual LinkActionKind getKind() { return actionMovie; }
   GBool hasAnnotRef() { return annotRef.num >= 0; }
   Ref *getAnnotRef() { return &annotRef; }
@@ -274,6 +283,81 @@ private:
 
   Ref annotRef;
   GString *title;
+};
+
+//------------------------------------------------------------------------
+// LinkJavaScript
+//------------------------------------------------------------------------
+
+class LinkJavaScript: public LinkAction {
+public:
+
+  LinkJavaScript(Object *jsObj);
+
+  virtual ~LinkJavaScript();
+
+  // Was the LinkJavaScript created successfully?
+  virtual GBool isOk() { return js != NULL; }
+
+  // Accessors.
+  virtual LinkActionKind getKind() { return actionJavaScript; }
+  GString *getJS() { return js; }
+
+private:
+
+  GString *js;
+};
+
+//------------------------------------------------------------------------
+// LinkSubmitForm
+//------------------------------------------------------------------------
+
+class LinkSubmitForm: public LinkAction {
+public:
+
+  LinkSubmitForm(Object *urlObj, Object *fieldsObj, Object *flagsObj);
+
+  virtual ~LinkSubmitForm();
+
+  // Was the LinkSubmitForm created successfully?
+  virtual GBool isOk() { return url != NULL; }
+
+  // Accessors.
+  virtual LinkActionKind getKind() { return actionSubmitForm; }
+  GString *getURL() { return url; }
+  Object *getFields() { return &fields; }
+  int getFlags() { return flags; }
+
+private:
+
+  GString *url;
+  Object fields;
+  int flags;
+};
+
+//------------------------------------------------------------------------
+// LinkHide
+//------------------------------------------------------------------------
+
+class LinkHide: public LinkAction {
+public:
+
+  LinkHide(Object *fieldsObj, Object *hideFlagObj);
+
+  virtual ~LinkHide();
+
+  // Was the LinkHide created successfully?
+  virtual GBool isOk() { return !fields.isNull(); }
+
+  // Accessors.
+  virtual LinkActionKind getKind() { return actionHide; }
+  Object *getFields() { return &fields; }
+  GBool getHideFlag() { return hideFlag; }
+
+private:
+
+  Object fields;
+  GBool hideFlag;
 };
 
 //------------------------------------------------------------------------
@@ -299,42 +383,6 @@ public:
 private:
 
   GString *action;		// action subtype
-};
-
-//------------------------------------------------------------------------
-// LinkBorderStyle
-//------------------------------------------------------------------------
-
-enum LinkBorderType {
-  linkBorderSolid,
-  linkBorderDashed,
-  linkBorderEmbossed,
-  linkBorderEngraved,
-  linkBorderUnderlined
-};
-
-class LinkBorderStyle {
-public:
-
-  LinkBorderStyle(LinkBorderType typeA, double widthA,
-		  double *dashA, int dashLengthA,
-		  double rA, double gA, double bA);
-  ~LinkBorderStyle();
-
-  LinkBorderType getType() { return type; }
-  double getWidth() { return width; }
-  void getDash(double **dashA, int *dashLengthA)
-    { *dashA = dash; *dashLengthA = dashLength; }
-  void getColor(double *rA, double *gA, double *bA)
-    { *rA = r; *gA = g; *bA = b; }
-
-private:
-
-  LinkBorderType type;
-  double width;
-  double *dash;
-  int dashLength;
-  double r, g, b;
 };
 
 //------------------------------------------------------------------------
@@ -364,20 +412,10 @@ public:
   void getRect(double *xa1, double *ya1, double *xa2, double *ya2)
     { *xa1 = x1; *ya1 = y1; *xa2 = x2; *ya2 = y2; }
 
-  // Get the border style info.
-  LinkBorderStyle *getBorderStyle() { return borderStyle; }
-
-   // Get border corners and width.
-  void getBorder(double *xa1, double *ya1, double *xa2, double *ya2,
-		 double *wa)
-    { *xa1 = x1; *ya1 = y1; *xa2 = x2; *ya2 = y2; *wa = borderW; }
-
 private:
 
   double x1, y1;		// lower left corner
   double x2, y2;		// upper right corner
-  double borderW;		// border width
-  LinkBorderStyle *borderStyle;	// border style
   LinkAction *action;		// action
   GBool ok;			// is link valid?
 };

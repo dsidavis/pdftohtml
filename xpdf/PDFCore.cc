@@ -2,7 +2,7 @@
 //
 // PDFCore.cc
 //
-// Copyright 2004 Glyph & Cog, LLC
+// Copyright 2004-2014 Glyph & Cog, LLC
 //
 //========================================================================
 
@@ -13,6 +13,7 @@
 #endif
 
 #include <math.h>
+#include "gmempp.h"
 #include "GString.h"
 #include "GList.h"
 #include "GlobalParams.h"
@@ -24,112 +25,108 @@
 #include "ErrorCodes.h"
 #include "PDFDoc.h"
 #include "Link.h"
-#include "TextOutputDev.h"
-#include "CoreOutputDev.h"
+#include "Annot.h"
+#include "AcroForm.h"
+#include "OptionalContent.h"
+#include "TileMap.h"
+#include "TileCache.h"
+#include "TileCompositor.h"
 #include "PDFCore.h"
-
-//------------------------------------------------------------------------
-// PDFCorePage
-//------------------------------------------------------------------------
-
-PDFCorePage::PDFCorePage(int pageA, int wA, int hA, int tileWA, int tileHA) {
-  page = pageA;
-  tiles = new GList();
-  w = wA;
-  h = hA;
-  tileW = tileWA;
-  tileH = tileHA;
-  links = NULL;
-  text = NULL;
-}
-
-PDFCorePage::~PDFCorePage() {
-  deleteGList(tiles, PDFCoreTile);
-  if (links) {
-    delete links;
-  }
-  if (text) {
-    delete text;
-  }
-}
-
-//------------------------------------------------------------------------
-// PDFCoreTile
-//------------------------------------------------------------------------
-
-PDFCoreTile::PDFCoreTile(int xDestA, int yDestA) {
-  xMin = 0;
-  yMin = 0;
-  xMax = 0;
-  yMax = 0;
-  xDest = xDestA;
-  yDest = yDestA;
-  bitmap = NULL;
-}
-
-PDFCoreTile::~PDFCoreTile() {
-  if (bitmap) {
-    delete bitmap;
-  }
-}
-
 
 //------------------------------------------------------------------------
 // PDFCore
 //------------------------------------------------------------------------
 
-PDFCore::PDFCore(SplashColorMode colorModeA, int bitmapRowPadA,
-		 GBool reverseVideoA, SplashColorPtr paperColorA) {
-  int i;
+PDFCore::PDFCore(SplashColorMode colorMode, int bitmapRowPad,
+		 GBool reverseVideo, SplashColorPtr paperColor) {
+  GString *initialZoom, *initialDisplayMode;
+  int z, i;
 
   doc = NULL;
-  continuousMode = globalParams->getContinuousView();
-  drawAreaWidth = drawAreaHeight = 0;
-  maxPageW = totalDocH = 0;
-  pageY = NULL;
-  topPage = 0;
-  scrollX = scrollY = 0;
-  zoom = defZoom;
-  dpi = 0;
-  rotate = 0;
 
+  linksPage = 0;
+  links = NULL;
+
+  annotsPage = 0;
+  annots = NULL;
+
+  textPage = 0;
+  textDPI = 0;
+  textRotate = 0;
+  textOutCtrl.mode = textOutPhysLayout;
+  text = NULL;
+
+  state = new DisplayState(globalParams->getMaxTileWidth(),
+			   globalParams->getMaxTileHeight(),
+			   globalParams->getTileCacheSize(),
+			   globalParams->getWorkerThreads(),
+			   colorMode, bitmapRowPad);
+  tileMap = new TileMap(state);
+  tileCache = new TileCache(state);
+  tileCompositor = new TileCompositor(state, tileMap, tileCache);
+  bitmapFinished = gTrue;
+
+  state->setReverseVideo(reverseVideo);
+  state->setPaperColor(paperColor);
+  initialZoom = globalParams->getInitialZoom();
+  if (!initialZoom->cmp("page")) {
+    state->setZoom(zoomPage);
+  } else if (!initialZoom->cmp("width")) {
+    state->setZoom(zoomWidth);
+  } else {
+    z = atoi(initialZoom->getCString());
+    if (z <= 0) {
+      z = zoomWidth;
+    }
+    state->setZoom(z);
+  }
+  delete initialZoom;
+  initialDisplayMode = globalParams->getInitialDisplayMode();
+  if (!initialDisplayMode->cmp("single")) {
+    state->setDisplayMode(displaySingle);
+  } else if (!initialDisplayMode->cmp("sideBySideSingle")) {
+    state->setDisplayMode(displaySideBySideSingle);
+  } else if (!initialDisplayMode->cmp("sideBySideContinuous")) {
+    state->setDisplayMode(displaySideBySideContinuous);
+  } else if (!initialDisplayMode->cmp("horizontalContinuous")) {
+    state->setDisplayMode(displayHorizontalContinuous);
+  } else {
+    state->setDisplayMode(displayContinuous);
+  }
+  delete initialDisplayMode;
+
+  selectMode = selectModeBlock;
   selectPage = 0;
-  selectULX = selectLRX = 0;
-  selectULY = selectLRY = 0;
-  dragging = gFalse;
-  lastDragLeft = lastDragTop = gTrue;
+  selectStartX = selectStartY = 0;
 
   historyCur = pdfHistorySize - 1;
   historyBLen = historyFLen = 0;
   for (i = 0; i < pdfHistorySize; ++i) {
     history[i].fileName = NULL;
+    history[i].page = 0;
   }
-
-
-  pages = new GList();
-  curTile = NULL;
-
-  splashColorCopy(paperColor, paperColorA);
-  out = new CoreOutputDev(colorModeA, bitmapRowPadA,
-			  reverseVideoA, paperColorA, gTrue,
-			  &redrawCbk, this);
-  out->startDoc(NULL);
 }
 
 PDFCore::~PDFCore() {
   int i;
 
+  delete tileCompositor;
+  delete tileCache;
+  delete tileMap;
+  delete state;
+  clearPage();
   if (doc) {
     delete doc;
   }
   for (i = 0; i < pdfHistorySize; ++i) {
     if (history[i].fileName) {
+#ifdef _WIN32
+      delete[] history[i].fileName;
+#else
       delete history[i].fileName;
+#endif
     }
   }
-  gfree(pageY);
-  deleteGList(pages, PDFCorePage);
-  delete out;
 }
 
 int PDFCore::loadFile(GString *fileName, GString *ownerPassword,
@@ -143,7 +140,7 @@ int PDFCore::loadFile(GString *fileName, GString *ownerPassword,
   return err;
 }
 
-#ifdef WIN32
+#ifdef _WIN32
 int PDFCore::loadFile(wchar_t *fileName, int fileNameLen,
 		      GString *ownerPassword, GString *userPassword) {
   int err;
@@ -166,10 +163,30 @@ int PDFCore::loadFile(BaseStream *stream, GString *ownerPassword,
   return err;
 }
 
+void PDFCore::loadDoc(PDFDoc *docA) {
+  setBusyCursor(gTrue);
+  loadFile2(docA);
+  setBusyCursor(gFalse);
+}
+
+int PDFCore::reload() {
+  int err;
+
+  if (!doc->getFileName()) {
+    return errOpenFile;
+  }
+  setBusyCursor(gTrue);
+  err = loadFile2(new PDFDoc(doc->getFileName()->copy(), NULL, NULL, this));
+  setBusyCursor(gFalse);
+  startUpdate();
+  finishUpdate(gTrue, gFalse);
+  return err;
+}
+
 int PDFCore::loadFile2(PDFDoc *newDoc) {
   int err;
-  double w, h, t;
-  int i;
+
+  clearSelection();
 
   // open the PDF file
   if (!newDoc->isOk()) {
@@ -178,36 +195,18 @@ int PDFCore::loadFile2(PDFDoc *newDoc) {
     return err;
   }
 
+  preLoad();
+
   // replace old document
+  // NB: do not delete doc until after DisplayState::setDoc() returns
+  state->setDoc(newDoc);
   if (doc) {
     delete doc;
   }
   doc = newDoc;
-  if (out) {
-    out->startDoc(doc->getXRef());
-  }
+  clearPage();
 
-  // nothing displayed yet
-  topPage = -99;
-  while (pages->getLength() > 0) {
-    delete (PDFCorePage *)pages->del(0);
-  }
-
-  // compute the max unscaled page size
-  maxUnscaledPageW = maxUnscaledPageH = 0;
-  for (i = 1; i <= doc->getNumPages(); ++i) {
-    w = doc->getPageCropWidth(i);
-    h = doc->getPageCropHeight(i);
-    if (doc->getPageRotate(i) == 90 || doc->getPageRotate(i) == 270) {
-      t = w; w = h; h = t;
-    }
-    if (w > maxUnscaledPageW) {
-      maxUnscaledPageW = w;
-    }
-    if (h > maxUnscaledPageH) {
-      maxUnscaledPageH = h;
-    }
-  }
+  postLoad();
 
   return errNone;
 }
@@ -218,638 +217,339 @@ void PDFCore::clear() {
   }
 
   // no document
+  // NB: do not delete doc until after DisplayState::setDoc() returns
+  state->setDoc(NULL);
   delete doc;
   doc = NULL;
-  out->clear();
-
-  // no page displayed
-  topPage = -99;
-  while (pages->getLength() > 0) {
-    delete (PDFCorePage *)pages->del(0);
-  }
+  clearPage();
 
   // redraw
-  scrollX = scrollY = 0;
-  redrawWindow(0, 0, drawAreaWidth, drawAreaHeight, gTrue);
+  state->setScrollPosition(1, 0, 0);
+  invalidateWholeWindow();
   updateScrollbars();
 }
 
-void PDFCore::displayPage(int topPageA, double zoomA, int rotateA,
-			  GBool scrollToTop, GBool addToHist) {
-  int scrollXA, scrollYA;
+PDFDoc *PDFCore::takeDoc(GBool redraw) {
+  PDFDoc *docA;
 
-  scrollXA = scrollX;
-  if (continuousMode) {
-    scrollYA = -1;
-  } else if (scrollToTop) {
-    scrollYA = 0;
-  } else {
-    scrollYA = scrollY;
-  }
-  if (zoomA != zoom) {
-    scrollXA = 0;
-    scrollYA = continuousMode ? -1 : 0;
+  if (!doc) {
+    return NULL;
   }
 
-  dragging = gFalse;
-  lastDragLeft = lastDragTop = gTrue;
+  // no document
+  // NB: do not delete doc until after DisplayState::setDoc() returns
+  state->setDoc(NULL);
+  docA = doc;
+  doc = NULL;
+  clearPage();
 
-  update(topPageA, scrollXA, scrollYA, zoomA, rotateA, gTrue, addToHist);
+  // redraw
+  state->setScrollPosition(1, 0, 0);
+  if (redraw) {
+    invalidateWholeWindow();
+    updateScrollbars();
+  }
+
+  return docA;
 }
 
-void PDFCore::displayDest(LinkDest *dest, double zoomA, int rotateA,
-			  GBool addToHist) {
+void PDFCore::displayPage(int page, GBool scrollToTop,
+			  GBool scrollToBottom, GBool addToHist) {
+  int scrollX, scrollY;
+
+  if (page <= 0 || page > doc->getNumPages()) {
+    return;
+  }
+  if (!scrollToTop &&
+      (state->getDisplayMode() == displayContinuous ||
+       state->getDisplayMode() == displaySideBySideContinuous)) {
+    scrollY = tileMap->getPageTopY(page)
+              + (state->getScrollY()
+		 - tileMap->getPageTopY(tileMap->getFirstPage()));
+  } else if (scrollToTop ||
+	     state->getDisplayMode() == displayContinuous ||
+	     state->getDisplayMode() == displaySideBySideContinuous) {
+    scrollY = tileMap->getPageTopY(page);
+  } else if (scrollToBottom) {
+    scrollY = tileMap->getPageBottomY(page);
+  } else {
+    scrollY = state->getScrollY();
+  }
+  if (state->getDisplayMode() == displayHorizontalContinuous) {
+    scrollX = tileMap->getPageLeftX(page);
+  } else {
+    scrollX = state->getScrollX();
+  }
+  startUpdate();
+  state->setScrollPosition(page, scrollX, scrollY);
+  finishUpdate(addToHist, gTrue);
+}
+
+void PDFCore::displayDest(LinkDest *dest) {
   Ref pageRef;
-  int topPageA;
-  int dx, dy, scrollXA, scrollYA;
+  int page;
+  int dx, dy, scrollX, scrollY;
 
   if (dest->isPageRef()) {
     pageRef = dest->getPageRef();
-    topPageA = doc->findPage(pageRef.num, pageRef.gen);
+    page = doc->findPage(pageRef.num, pageRef.gen);
   } else {
-    topPageA = dest->getPageNum();
+    page = dest->getPageNum();
   }
-  if (topPageA <= 0 || topPageA > doc->getNumPages()) {
-    topPageA = 1;
+  if (page <= 0 || page > doc->getNumPages()) {
+    page = 1;
   }
-  scrollXA = scrollX;
-  scrollYA = continuousMode ? -1 : scrollY;
+
   switch (dest->getKind()) {
   case destXYZ:
-    cvtUserToDev(topPageA, dest->getLeft(), dest->getTop(), &dx, &dy);
-    if (continuousMode && topPage > 0) {
-      dy += pageY[topPageA - 1];
+    cvtUserToDev(page, dest->getLeft(), dest->getTop(), &dx, &dy);
+    scrollX = tileMap->getPageLeftX(page);
+    if (dest->getChangeLeft()) {
+      scrollX += dx;
     }
-    scrollXA = dest->getChangeLeft() ? dx : scrollX;
-    scrollYA = dest->getChangeTop() ? dy : scrollY;
-    //~ what is the zoom parameter?
+    scrollY = tileMap->getPageTopY(page);
+    if (dest->getChangeTop()) {
+      scrollY += dy;
+    }
+    startUpdate();
+    state->setScrollPosition(page, scrollX, scrollY);
+    finishUpdate(gTrue, gTrue);
     break;
   case destFit:
   case destFitB:
-    //~ do fit
-    scrollXA = 0;
-    scrollYA = continuousMode ? -1 : 0;
+    state->setZoom(zoomPage);
+    scrollX = tileMap->getPageLeftX(page);
+    scrollY = tileMap->getPageTopY(page);
+    startUpdate();
+    state->setScrollPosition(page, scrollX, scrollY);
+    finishUpdate(gTrue, gTrue);
     break;
   case destFitH:
   case destFitBH:
-    //~ do fit
-    cvtUserToDev(topPageA, 0, dest->getTop(), &dx, &dy);
-    if (continuousMode && topPage > 0) {
-      dy += pageY[topPageA - 1];
+    state->setZoom(zoomWidth);
+    scrollX = tileMap->getPageLeftX(page);
+    scrollY = tileMap->getPageTopY(page);
+    if (dest->getChangeTop()) {
+      cvtUserToDev(page, 0, dest->getTop(), &dx, &dy);
+      scrollY += dy;
     }
-    scrollXA = 0;
-    scrollYA = dy;
+    startUpdate();
+    state->setScrollPosition(page, scrollX, scrollY);
+    finishUpdate(gTrue, gTrue);
     break;
   case destFitV:
   case destFitBV:
-    //~ do fit
-    cvtUserToDev(topPageA, dest->getLeft(), 0, &dx, &dy);
-    scrollXA = dx;
-    scrollYA = continuousMode ? -1 : 0;
+    state->setZoom(zoomHeight);
+    scrollX = tileMap->getPageLeftX(page);
+    scrollY = tileMap->getPageTopY(page);
+    if (dest->getChangeTop()) {
+      cvtUserToDev(page, dest->getLeft(), 0, &dx, &dy);
+      scrollX += dx;
+    }
+    startUpdate();
+    state->setScrollPosition(page, scrollX, scrollY);
+    finishUpdate(gTrue, gTrue);
     break;
   case destFitR:
-    //~ do fit
-    cvtUserToDev(topPageA, dest->getLeft(), dest->getTop(), &dx, &dy);
-    if (continuousMode && topPage > 0) {
-      dy += pageY[topPageA - 1];
-    }
-    scrollXA = dx;
-    scrollYA = dy;
+    zoomToRect(page, dest->getLeft(), dest->getTop(),
+	       dest->getRight(), dest->getBottom());
     break;
   }
-  update(topPageA, scrollXA, scrollYA, zoom, rotate, gFalse,
-	 addToHist && topPageA != topPage);
 }
 
-void PDFCore::update(int topPageA, int scrollXA, int scrollYA,
-		     double zoomA, int rotateA, GBool force, GBool addToHist) {
-  double hDPI, vDPI, dpiA, uw, uh, ut;
-  int w, h, t, x0, x1, y0, y1, x, y;
-  int rot;
-  int pg0, pg1;
-  PDFCoreTile *tile;
-  PDFCorePage *page;
-  PDFHistory *hist;
-  SplashColor xorColor;
-  GBool needUpdate;
-  int i, j;
+void PDFCore::startUpdate() {
+}
 
-  //~ handle fullScreen
+void PDFCore::finishUpdate(GBool addToHist, GBool checkForChangedFile) {
+  int scrollPage, scrollX, scrollY, maxScrollX, maxScrollY;
 
-  // check for document and valid page number
   if (!doc) {
-    // save the new settings
-    zoom = zoomA;
-    rotate = rotateA;
+    invalidateWholeWindow();
+    updateScrollbars();
     return;
   }
-  if (topPageA <= 0 || topPageA > doc->getNumPages()) {
-    return;
-  }
-
-  needUpdate = gFalse;
 
   // check for changes to the PDF file
-  if ((force || (!continuousMode && topPage != topPageA)) &&
+  if (checkForChangedFile &&
+      doc->getFileName() &&
       checkForNewFile()) {
-    if (loadFile(doc->getFileName()) == errNone) {
-      if (topPageA > doc->getNumPages()) {
-	topPageA = doc->getNumPages();
-      }
-      needUpdate = gTrue;
-    }
+    loadFile(doc->getFileName());
   }
 
-  // compute the DPI
-  if (continuousMode) {
-    uw = maxUnscaledPageW;
-    uh = maxUnscaledPageH;
-    rot = rotateA;
-  } else {
-    uw = doc->getPageCropWidth(topPageA);
-    uh = doc->getPageCropHeight(topPageA);
-    rot = rotateA + doc->getPageRotate(topPageA);
-    if (rot >= 360) {
-      rot -= 360;
-    } else if (rot < 0) {
-      rot += 360;
-    }
-  }
-  if (rot == 90 || rot == 270) {
-    ut = uw; uw = uh; uh = ut;
-  }
-  if (zoomA == zoomPage) {
-    hDPI = (drawAreaWidth / uw) * 72;
-    if (continuousMode) {
-      vDPI = ((drawAreaHeight - continuousModePageSpacing) / uh) * 72;
-    } else {
-      vDPI = (drawAreaHeight / uh) * 72;
-    }
-    dpiA = (hDPI < vDPI) ? hDPI : vDPI;
-  } else if (zoomA == zoomWidth) {
-    dpiA = (drawAreaWidth / uw) * 72;
-  } else {
-    dpiA = 0.01 * zoomA * 72;
-  }
-  // this can happen if the window hasn't been sized yet
-  if (dpiA <= 0) {
-    dpiA = 1;
+  // zero-page documents are a special case
+  // (check for this *after* checking for changes to the file)
+  if (!doc->getNumPages()) {
+    invalidateWholeWindow();
+    updateScrollbars();
+    return;
   }
 
-  // if the display properties have changed, create a new PDFCorePage
-  // object
-  if (force || pages->getLength() == 0 ||
-      (!continuousMode && topPageA != topPage) ||
-      zoomA != zoom || dpiA != dpi || rotateA != rotate) {
-    needUpdate = gTrue;
-    setSelection(0, 0, 0, 0, 0);
-    while (pages->getLength() > 0) {
-      delete (PDFCorePage *)pages->del(0);
-    }
-    zoom = zoomA;
-    rotate = rotateA;
-    dpi = dpiA;
-    if (continuousMode) {
-      maxPageW = totalDocH = 0;
-      pageY = (int *)greallocn(pageY, doc->getNumPages(), sizeof(int));
-      for (i = 1; i <= doc->getNumPages(); ++i) {
-	pageY[i-1] = totalDocH;
-	w = (int)((doc->getPageCropWidth(i) * dpi) / 72 + 0.5);
-	h = (int)((doc->getPageCropHeight(i) * dpi) / 72 + 0.5);
-	rot = rotate + doc->getPageRotate(i);
-	if (rot >= 360) {
-	  rot -= 360;
-	} else if (rot < 0) {
-	  rot += 360;
-	}
-	if (rot == 90 || rot == 270) {
-	  t = w; w = h; h = t;
-	}
-	if (w > maxPageW) {
-	  maxPageW = w;
-	}
-	totalDocH += h;
-	if (i < doc->getNumPages()) {
-	  totalDocH += continuousModePageSpacing;
-	}
-      }
-    } else {
-      rot = rotate + doc->getPageRotate(topPageA);
-      if (rot >= 360) {
-	rot -= 360;
-      } else if (rot < 0) {
-	rot += 360;
-      }
-      addPage(topPageA, rot);
-    }
-  } else {
-    // erase the selection
-    if (selectULX != selectLRX && selectULY != selectLRY) {
-      xorColor[0] = xorColor[1] = xorColor[2] = 0xff;
-      xorRectangle(selectPage, selectULX, selectULY, selectLRX, selectLRY,
-		   new SplashSolidColor(xorColor));
-    }
+  // check the scroll position
+  scrollPage = state->getScrollPage();
+  if (state->getDisplayMode() == displaySideBySideSingle &&
+      !(scrollPage & 1)) {
+    --scrollPage;
   }
-  if (continuousMode) {
-    page = NULL; // make gcc happy
-  } else {
-    page = (PDFCorePage *)pages->get(0);
+  if (state->displayModeIsContinuous()) {
+    scrollPage = 0;
+  } else if (scrollPage <= 0 || scrollPage > doc->getNumPages()) {
+    scrollPage = 1;
   }
-  topPage = topPageA;
-
-  // adjust the scroll position
-  scrollX = scrollXA;
-  if (continuousMode && scrollYA < 0) {
-    scrollY = pageY[topPage - 1];
-  } else {
-    scrollY = scrollYA;
-  }
-  w = continuousMode ? maxPageW : page->w;
-  if (scrollX > w - drawAreaWidth) {
-    scrollX = w - drawAreaWidth;
+  scrollX = state->getScrollX();
+  scrollY = state->getScrollY();
+  // we need to set scrollPage before calling getScrollLimits()
+  state->setScrollPosition(scrollPage, scrollX, scrollY);
+  tileMap->getScrollLimits(&maxScrollX, &maxScrollY);
+  maxScrollX -= state->getWinW();
+  maxScrollY -= state->getWinH();
+  if (scrollX > maxScrollX) {
+    scrollX = maxScrollX;
   }
   if (scrollX < 0) {
     scrollX = 0;
   }
-  h = continuousMode ? totalDocH : page->h;
-  if (scrollY > h - drawAreaHeight) {
-    scrollY = h - drawAreaHeight;
+  if (scrollY > maxScrollY) {
+    scrollY = maxScrollY;
   }
   if (scrollY < 0) {
     scrollY = 0;
   }
-
-  // find topPage, and the first and last pages to be rasterized
-  if (continuousMode) {
-    //~ should use a binary search
-    for (i = 2; i <= doc->getNumPages(); ++i) {
-      if (pageY[i-1] > scrollY - drawAreaHeight / 2) {
-	break;
-      }
-    }
-    pg0 = i - 1;
-    for (i = pg0 + 1; i <= doc->getNumPages(); ++i) {
-      if (pageY[i-1] > scrollY) {
-	break;
-      }
-    }
-    topPage = i - 1;
-    for (i = topPage + 1; i <= doc->getNumPages(); ++i) {
-      if (pageY[i-1] > scrollY + drawAreaHeight + drawAreaHeight / 2) {
-	break;
-      }
-    }
-    pg1 = i - 1;
-
-    // delete pages that are no longer needed and insert new pages
-    // objects that are needed
-    while (pages->getLength() > 0 &&
-	   ((PDFCorePage *)pages->get(0))->page < pg0) {
-      delete (PDFCorePage *)pages->del(0);
-    }
-    i = pages->getLength() - 1;
-    while (i > 0 && ((PDFCorePage *)pages->get(i))->page > pg1) {
-      delete (PDFCorePage *)pages->del(i--);
-    }
-    j = pages->getLength() > 0 ? ((PDFCorePage *)pages->get(0))->page - 1
-                               : pg1;
-    for (i = pg0; i <= j; ++i) {
-      rot = rotate + doc->getPageRotate(i);
-      if (rot >= 360) {
-	rot -= 360;
-      } else if (rot < 0) {
-	rot += 360;
-      }
-      addPage(i, rot);
-    }      
-    j = ((PDFCorePage *)pages->get(pages->getLength() - 1))->page;
-    for (i = j + 1; i <= pg1; ++i) {
-      rot = rotate + doc->getPageRotate(i);
-      if (rot >= 360) {
-	rot -= 360;
-      } else if (rot < 0) {
-	rot += 360;
-      }
-      addPage(i, rot);
-    }
-
-  } else {
-    pg0 = pg1 = topPage;
+  if (scrollPage != state->getScrollPage() ||
+      scrollX != state->getScrollX() ||
+      scrollY != state->getScrollY()) {
+    state->setScrollPosition(scrollPage, scrollX, scrollY);
   }
 
-  // delete tiles that are no longer needed
-  for (i = 0; i < pages->getLength(); ++i) {
-    page = (PDFCorePage *)pages->get(i);
-    j = 0;
-    while (j < page->tiles->getLength()) {
-      tile = (PDFCoreTile *)page->tiles->get(j);
-      if (continuousMode) {
-	y0 = pageY[page->page - 1] + tile->yMin;
-	y1 = pageY[page->page - 1] + tile->yMax;
-      } else {
-	y0 = tile->yMin;
-	y1 = tile->yMax;
-      }
-      if (tile->xMax < scrollX - drawAreaWidth / 2 ||
-	  tile->xMin > scrollX + drawAreaWidth + drawAreaWidth / 2 ||
-	  y1 < scrollY - drawAreaHeight / 2 ||
-	  y0 > scrollY + drawAreaHeight + drawAreaHeight / 2) {
-	delete (PDFCoreTile *)page->tiles->del(j);
-      } else {
-	++j;
-      }
-    }
+  // redraw
+  // - if the bitmap is available (e.g., we just scrolled), we want to
+  //   redraw immediately; if not, postpone the redraw until a
+  //   tileDone or tick (incremental update) to avoid "flashing" the
+  //   screen (drawing a blank background, followed by the actual
+  //   content slightly later)
+  getWindowBitmap(gTrue);
+  if (bitmapFinished) {
+    invalidateWholeWindow();
   }
-
-  // update page positions
-  for (i = 0; i < pages->getLength(); ++i) {
-    page = (PDFCorePage *)pages->get(i);
-    page->xDest = -scrollX;
-    if (continuousMode) {
-      page->yDest = pageY[page->page - 1] - scrollY;
-    } else {
-      page->yDest = -scrollY;
-    }
-    if (continuousMode) {
-      if (page->w < maxPageW) {
-	page->xDest += (maxPageW - page->w) / 2;
-      }
-      if (maxPageW < drawAreaWidth) {
-	page->xDest += (drawAreaWidth - maxPageW) / 2;
-      }
-    } else if (page->w < drawAreaWidth) {
-      page->xDest += (drawAreaWidth - page->w) / 2;
-    }
-    if (continuousMode && totalDocH < drawAreaHeight) {
-      page->yDest += (drawAreaHeight - totalDocH) / 2;
-    } else if (!continuousMode && page->h < drawAreaHeight) {
-      page->yDest += (drawAreaHeight - page->h) / 2;
-    }
-  }
-
-  // rasterize any new tiles
-  for (i = 0; i < pages->getLength(); ++i) {
-    page = (PDFCorePage *)pages->get(i);
-    x0 = page->xDest;
-    x1 = x0 + page->w - 1;
-    if (x0 < -drawAreaWidth / 2) {
-      x0 = -drawAreaWidth / 2;
-    }
-    if (x1 > drawAreaWidth + drawAreaWidth / 2) {
-      x1 = drawAreaWidth + drawAreaWidth / 2;
-    }
-    x0 = ((x0 - page->xDest) / page->tileW) * page->tileW;
-    x1 = ((x1 - page->xDest) / page->tileW) * page->tileW;
-    y0 = page->yDest;
-    y1 = y0 + page->h - 1;
-    if (y0 < -drawAreaHeight / 2) {
-      y0 = -drawAreaHeight / 2;
-    }
-    if (y1 > drawAreaHeight + drawAreaHeight / 2) {
-      y1 = drawAreaHeight + drawAreaHeight / 2;
-    }
-    y0 = ((y0 - page->yDest) / page->tileH) * page->tileH;
-    y1 = ((y1 - page->yDest) / page->tileH) * page->tileH;
-    for (y = y0; y <= y1; y += page->tileH) {
-      for (x = x0; x <= x1; x += page->tileW) {
-	needTile(page, x, y);
-      }
-    }
-  }
-
-  // update tile positions
-  for (i = 0; i < pages->getLength(); ++i) {
-    page = (PDFCorePage *)pages->get(i);
-    for (j = 0; j < page->tiles->getLength(); ++j) {
-      tile = (PDFCoreTile *)page->tiles->get(j);
-      tile->xDest = tile->xMin - scrollX;
-      if (continuousMode) {
-	tile->yDest = tile->yMin + pageY[page->page - 1] - scrollY;
-      } else {
-	tile->yDest = tile->yMin - scrollY;
-      }
-      if (continuousMode) {
-	if (page->w < maxPageW) {
-	  tile->xDest += (maxPageW - page->w) / 2;
-	}
-	if (maxPageW < drawAreaWidth) {
-	  tile->xDest += (drawAreaWidth - maxPageW) / 2;
-	}
-      } else if (page->w < drawAreaWidth) {
-	tile->xDest += (drawAreaWidth - page->w) / 2;
-      }
-      if (continuousMode && totalDocH < drawAreaHeight) {
-	tile->yDest += (drawAreaHeight - totalDocH) / 2;
-      } else if (!continuousMode && page->h < drawAreaHeight) {
-	tile->yDest += (drawAreaHeight - page->h) / 2;
-      }
-    }
-  }
-
-  // redraw the selection
-  if (selectULX != selectLRX && selectULY != selectLRY) {
-    xorColor[0] = xorColor[1] = xorColor[2] = 0xff;
-    xorRectangle(selectPage, selectULX, selectULY, selectLRX, selectLRY,
-		 new SplashSolidColor(xorColor));
-  }
-
-  // redraw the window
-  redrawWindow(0, 0, drawAreaWidth, drawAreaHeight, needUpdate);
   updateScrollbars();
 
   // add to history
   if (addToHist) {
-    if (++historyCur == pdfHistorySize) {
-      historyCur = 0;
-    }
-    hist = &history[historyCur];
-    if (hist->fileName) {
-      delete hist->fileName;
-    }
-    if (doc->getFileName()) {
-      hist->fileName = doc->getFileName()->copy();
-    } else {
-      hist->fileName = NULL;
-    }
-    hist->page = topPage;
-    if (historyBLen < pdfHistorySize) {
-      ++historyBLen;
-    }
-    historyFLen = 0;
+    addToHistory();
   }
 }
 
-void PDFCore::addPage(int pg, int rot) {
-  PDFCorePage *page;
-  int w, h, t, tileW, tileH, i;
+void PDFCore::addToHistory() {
+  PDFHistory h;
+  PDFHistory *cur;
 
-  w = (int)((doc->getPageCropWidth(pg) * dpi) / 72 + 0.5);
-  h = (int)((doc->getPageCropHeight(pg) * dpi) / 72 + 0.5);
-  if (rot == 90 || rot == 270) {
-    t = w; w = h; h = t;
+  cur = &history[historyCur];
+  h.page = tileMap->getMidPage();
+  h.fileName = NULL;
+#ifdef _WIN32
+  if (doc->getFileNameU()) {
+    wchar_t dummy;
+    // NB: if the buffer is too small, GetFullPathNameW returns a
+    // *maximum* required buffer size, which may be larger than the
+    // size actually used by the second call (it looks like it just
+    // adds the size of the current directory and the sizef of the
+    // input path)
+    DWORD nChars = GetFullPathNameW(doc->getFileNameU(), 1, &dummy, NULL);
+    if (nChars > 0) {
+      h.fileName = (wchar_t *)gmallocn(nChars, sizeof(wchar_t));
+      if (GetFullPathNameW(doc->getFileNameU(), nChars,
+			   h.fileName, NULL) == 0) {
+	gfree(h.fileName);
+	h.fileName = NULL;
+      }
+    }
   }
-  tileW = 2 * drawAreaWidth;
-  if (tileW < 1500) {
-    tileW = 1500;
+#else
+  if (doc->getFileName()) {
+    h.fileName = doc->getFileName()->copy();
   }
-  if (tileW > w) {
-    tileW = w;
-  }
-  tileH = 2 * drawAreaHeight;
-  if (tileH < 1500) {
-    tileH = 1500;
-  }
-  if (tileH > h) {
-    tileH = h;
-  }
-  page = new PDFCorePage(pg, w, h, tileW, tileH);
-  for (i = 0;
-       i < pages->getLength() && pg > ((PDFCorePage *)pages->get(i))->page;
-       ++i) ;
-  pages->insert(i, page);
-}
-
-void PDFCore::needTile(PDFCorePage *page, int x, int y) {
-  PDFCoreTile *tile;
-  TextOutputDev *textOut;
-  int xDest, yDest, sliceW, sliceH;
-  int i;
-
-  for (i = 0; i < page->tiles->getLength(); ++i) {
-    tile = (PDFCoreTile *)page->tiles->get(i);
-    if (x == tile->xMin && y == tile->yMin) {
+#endif
+  if (historyBLen > 0 && h.page == cur->page) {
+    if (!h.fileName && !cur->fileName) {
       return;
     }
-  }
-
-  setBusyCursor(gTrue);
-
-  sliceW = page->tileW;
-  if (x + sliceW > page->w) {
-    sliceW = page->w - x;
-  }
-  sliceH = page->tileH;
-  if (y + sliceH > page->h) {
-    sliceH = page->h - y;
-  }
-
-  xDest = x - scrollX;
-  if (continuousMode) {
-    yDest = y + pageY[page->page - 1] - scrollY;
-  } else {
-    yDest = y - scrollY;
-  }
-  if (continuousMode) {
-    if (page->w < maxPageW) {
-      xDest += (maxPageW - page->w) / 2;
+#ifdef _WIN32
+    if (h.fileName && cur->fileName && !wcscmp(h.fileName, cur->fileName)) {
+      gfree(h.fileName);
+      return;
     }
-    if (maxPageW < drawAreaWidth) {
-      xDest += (drawAreaWidth - maxPageW) / 2;
+#else
+    if (h.fileName && cur->fileName && !h.fileName->cmp(cur->fileName)) {
+      delete h.fileName;
+      return;
     }
-  } else if (page->w < drawAreaWidth) {
-    xDest += (drawAreaWidth - page->w) / 2;
+#endif
   }
-  if (continuousMode && totalDocH < drawAreaHeight) {
-    yDest += (drawAreaHeight - totalDocH) / 2;
-  } else if (!continuousMode && page->h < drawAreaHeight) {
-    yDest += (drawAreaHeight - page->h) / 2;
+  if (++historyCur == pdfHistorySize) {
+    historyCur = 0;
   }
-  curTile = tile = newTile(xDest, yDest);
-  tile->xMin = x;
-  tile->yMin = y;
-  tile->xMax = x + sliceW;
-  tile->yMax = y + sliceH;
-  tile->edges = 0;
-  if (tile->xMin == 0) {
-    tile->edges |= pdfCoreTileLeftEdge;
+  if (history[historyCur].fileName) {
+#ifdef _WIN32
+    gfree(history[historyCur].fileName);
+#else
+    delete history[historyCur].fileName;
+#endif
   }
-  if (tile->xMax == page->w) {
-    tile->edges |= pdfCoreTileRightEdge;
+  history[historyCur] = h;
+  if (historyBLen < pdfHistorySize) {
+    ++historyBLen;
   }
-  if (continuousMode) {
-    if (tile->yMin == 0) {
-      tile->edges |= pdfCoreTileTopSpace;
-      if (page->page == 1) {
-	tile->edges |= pdfCoreTileTopEdge;
-      }
-    }
-    if (tile->yMax == page->h) {
-      tile->edges |= pdfCoreTileBottomSpace;
-      if (page->page == doc->getNumPages()) {
-	tile->edges |= pdfCoreTileBottomEdge;
-      }
-    }
-  } else {
-    if (tile->yMin == 0) {
-      tile->edges |= pdfCoreTileTopEdge;
-    }
-    if (tile->yMax == page->h) {
-      tile->edges |= pdfCoreTileBottomEdge;
-    }
-  }
-  doc->displayPageSlice(out, page->page, dpi, dpi, rotate,
-			gFalse, gTrue, gTrue, x, y, sliceW, sliceH);
-  tile->bitmap = out->takeBitmap();
-  memcpy(tile->ctm, out->getDefCTM(), 6 * sizeof(double));
-  memcpy(tile->ictm, out->getDefICTM(), 6 * sizeof(double));
-  if (!page->links) {
-    page->links = doc->takeLinks();
-  }
-  if (!page->text) {
-    if ((textOut = new TextOutputDev(NULL, gTrue, gFalse, gFalse))) {
-      doc->displayPage(textOut, page->page, dpi, dpi, rotate,
-		       gFalse, gTrue, gFalse);
-      page->text = textOut->takeText();
-      delete textOut;
-    }
-  }
-  page->tiles->append(tile);
-
-  setBusyCursor(gFalse);
+  historyFLen = 0;
 }
 
 GBool PDFCore::gotoNextPage(int inc, GBool top) {
-  int pg, scrollYA;
+  GBool sideBySide;
+  int pg;
 
-  if (!doc || doc->getNumPages() == 0 || topPage >= doc->getNumPages()) {
+  if (!doc || !doc->getNumPages()) {
     return gFalse;
   }
-  if ((pg = topPage + inc) > doc->getNumPages()) {
+  pg = tileMap->getFirstPage();
+  sideBySide = state->displayModeIsSideBySide();
+  if (pg + (sideBySide ? 2 : 1) > doc->getNumPages()) {
+    return gFalse;
+  }
+  if (sideBySide && inc < 2) {
+    inc = 2;
+  }
+  if ((pg += inc) > doc->getNumPages()) {
     pg = doc->getNumPages();
   }
-  if (continuousMode) {
-    scrollYA = -1;
-  } else if (top) {
-    scrollYA = 0;
-  } else {
-    scrollYA = scrollY;
-  }
-  update(pg, scrollX, scrollYA, zoom, rotate, gFalse, gTrue);
+  displayPage(pg, top, gFalse);
   return gTrue;
 }
 
 GBool PDFCore::gotoPrevPage(int dec, GBool top, GBool bottom) {
-  int pg, scrollYA;
+  int pg;
 
-  if (!doc || doc->getNumPages() == 0 || topPage <= 1) {
+  if (!doc || !doc->getNumPages()) {
     return gFalse;
   }
-  if ((pg = topPage - dec) < 1) {
+  pg = tileMap->getFirstPage();
+  if (state->getDisplayMode() == displayContinuous &&
+      state->getScrollY() > tileMap->getPageTopY(pg)) {
+    ++pg;
+  } else if (state->getDisplayMode() == displaySideBySideContinuous &&
+	     state->getScrollY() > tileMap->getPageTopY(pg)) {
+    pg += 2;
+  } else if (state->getDisplayMode() == displayHorizontalContinuous &&
+	     state->getScrollX() > tileMap->getPageLeftX(pg)) {
+    ++pg;
+  }
+  if (pg <= 1) {
+    return gFalse;
+  }
+  if (state->displayModeIsSideBySide() && dec < 2) {
+    dec = 2;
+  }
+  if ((pg -= dec) < 1) {
     pg = 1;
   }
-  if (continuousMode) {
-    scrollYA = -1;
-  } else if (top) {
-    scrollYA = 0;
-  } else if (bottom) {
-    scrollYA = ((PDFCorePage *)pages->get(0))->h - drawAreaHeight;
-    if (scrollYA < 0) {
-      scrollYA = 0;
-    }
-  } else {
-    scrollYA = scrollY;
-  }
-  update(pg, scrollX, scrollYA, zoom, rotate, gFalse, gTrue);
+  displayPage(pg, top, bottom);
   return gTrue;
 }
 
@@ -862,7 +562,7 @@ GBool PDFCore::gotoNamedDestination(GString *dest) {
   if (!(d = doc->findDest(dest))) {
     return gFalse;
   }
-  displayDest(d, zoom, rotate, gTrue);
+  displayDest(d);
   delete d;
   return gTrue;
 }
@@ -878,14 +578,29 @@ GBool PDFCore::goForward() {
   }
   --historyFLen;
   ++historyBLen;
-  if (!doc || history[historyCur].fileName->cmp(doc->getFileName()) != 0) {
+  if (!history[historyCur].fileName) {
+    return gFalse;
+  }
+#ifdef _WIN32
+  if (!doc ||
+      !doc->getFileNameU() ||
+      wcscmp(history[historyCur].fileName, doc->getFileNameU()) != 0) {
+    if (loadFile(history[historyCur].fileName,
+		 (int)wcslen(history[historyCur].fileName)) != errNone) {
+      return gFalse;
+    }
+  }
+#else
+  if (!doc ||
+      !doc->getFileName() ||
+      history[historyCur].fileName->cmp(doc->getFileName()) != 0) {
     if (loadFile(history[historyCur].fileName) != errNone) {
       return gFalse;
     }
   }
+#endif
   pg = history[historyCur].page;
-  update(pg, scrollX, continuousMode ? -1 : scrollY,
-	 zoom, rotate, gFalse, gFalse);
+  displayPage(pg, gFalse, gFalse, gFalse);
   return gTrue;
 }
 
@@ -900,439 +615,860 @@ GBool PDFCore::goBackward() {
   }
   --historyBLen;
   ++historyFLen;
-  if (!doc || history[historyCur].fileName->cmp(doc->getFileName()) != 0) {
+  if (!history[historyCur].fileName) {
+    return gFalse;
+  }
+#ifdef _WIN32
+  if (!doc ||
+      !doc->getFileNameU() ||
+      wcscmp(history[historyCur].fileName, doc->getFileNameU()) != 0) {
+    if (loadFile(history[historyCur].fileName,
+		 (int)wcslen(history[historyCur].fileName)) != errNone) {
+      return gFalse;
+    }
+  }
+#else
+  if (!doc ||
+      !doc->getFileName() ||
+      history[historyCur].fileName->cmp(doc->getFileName()) != 0) {
     if (loadFile(history[historyCur].fileName) != errNone) {
       return gFalse;
     }
   }
+#endif
   pg = history[historyCur].page;
-  update(pg, scrollX, continuousMode ? -1 : scrollY,
-	 zoom, rotate, gFalse, gFalse);
+  displayPage(pg, gFalse, gFalse, gFalse);
   return gTrue;
 }
 
 void PDFCore::scrollLeft(int nCols) {
-  scrollTo(scrollX - nCols * 16, scrollY);
+  scrollTo(state->getScrollX() - nCols, state->getScrollY());
 }
 
 void PDFCore::scrollRight(int nCols) {
-  scrollTo(scrollX + nCols * 16, scrollY);
+  scrollTo(state->getScrollX() + nCols, state->getScrollY());
 }
 
-void PDFCore::scrollUp(int nLines) {
-  scrollTo(scrollX, scrollY - nLines * 16);
+void PDFCore::scrollUp(int nLines, GBool snapToPage) {
+  scrollTo(state->getScrollX(), state->getScrollY() - nLines, snapToPage);
 }
 
-void PDFCore::scrollDown(int nLines) {
-  scrollTo(scrollX, scrollY + nLines * 16);
+void PDFCore::scrollUpPrevPage(int nLines) {
+  if (!state->displayModeIsContinuous() &&
+      state->getScrollY() == 0) {
+    gotoPrevPage(1, gFalse, gTrue);
+  } else {
+    scrollUp(nLines, gTrue);
+  }
+}
+
+void PDFCore::scrollDown(int nLines, GBool snapToPage) {
+  scrollTo(state->getScrollX(), state->getScrollY() + nLines, snapToPage);
+}
+
+void PDFCore::scrollDownNextPage(int nLines) {
+  int horizMax, vertMax;
+
+  if (!state->displayModeIsContinuous()) {
+    tileMap->getScrollLimits(&horizMax, &vertMax);
+    if (state->getScrollY() >= vertMax - state->getWinH()) {
+      gotoNextPage(1, gTrue);
+    } else {
+      scrollDown(nLines);
+    }
+  } else {
+    scrollDown(nLines, gTrue);
+  }
 }
 
 void PDFCore::scrollPageUp() {
-  if (!continuousMode && scrollY == 0) {
-    gotoPrevPage(1, gFalse, gTrue);
-  } else {
-    scrollTo(scrollX, scrollY - drawAreaHeight);
-  }
+  scrollUpPrevPage(state->getWinH());
 }
 
 void PDFCore::scrollPageDown() {
-  if (!continuousMode &&
-      scrollY >= ((PDFCorePage *)pages->get(0))->h - drawAreaHeight) {
-    gotoNextPage(1, gTrue);
-  } else {
-    scrollTo(scrollX, scrollY + drawAreaHeight);
-  }
+  scrollDownNextPage(state->getWinH());
 }
 
-void PDFCore::scrollTo(int x, int y) {
-  update(topPage, x, y < 0 ? 0 : y, zoom, rotate, gFalse, gFalse);
-}
+void PDFCore::scrollTo(int x, int y, GBool snapToPage) {
+  int next, topPage, topPageY, sy, dy;
 
-void PDFCore::zoomToRect(int pg, double ulx, double uly,
-			 double lrx, double lry) {
-  int x0, y0, x1, y1, u, sx, sy;
-  double rx, ry, newZoom, t;
-  PDFCorePage *p;
+  startUpdate();
+  state->setScrollPosition(state->getScrollPage(), x, y);
 
-  cvtUserToDev(pg, ulx, uly, &x0, &y0);
-  cvtUserToDev(pg, lrx, lry, &x1, &y1);
-  if (x0 > x1) {
-    u = x0; x0 = x1; x1 = u;
-  }
-  if (y0 > y1) {
-    u = y0; y0 = y1; y1 = u;
-  }
-  rx = (double)drawAreaWidth / (double)(x1 - x0);
-  ry = (double)drawAreaHeight / (double)(y1 - y0);
-  if (rx < ry) {
-    newZoom = rx * (dpi / (0.01 * 72));
-    sx = (int)(rx * x0);
-    t = (drawAreaHeight * (x1 - x0)) / drawAreaWidth;
-    sy = (int)(rx * (y0 + y1 - t) / 2);
-    if (continuousMode) {
-      if ((p = findPage(pg)) && p->w < maxPageW) {
-	sx += (int)(0.5 * rx * (maxPageW - p->w));
-      }
-      u = (pg - 1) * continuousModePageSpacing;
-      sy += (int)(rx * (pageY[pg - 1] - u)) + u;
-    }
-  } else {
-    newZoom = ry * (dpi / (0.01 * 72));
-    t = (drawAreaWidth * (y1 - y0)) / drawAreaHeight;
-    sx = (int)(ry * (x0 + x1 - t) / 2);
-    sy = (int)(ry * y0);
-    if (continuousMode) {
-      if ((p = findPage(pg)) && p->w < maxPageW) {
-	sx += (int)(0.5 * rx * (maxPageW - p->w));
-      }
-      u = (pg - 1) * continuousModePageSpacing;
-      sy += (int)(ry * (pageY[pg - 1] - u)) + u;
-    }
-  }
-  update(pg, sx, sy, newZoom, rotate, gFalse, gFalse);
-}
-
-void PDFCore::setContinuousMode(GBool cm) {
-  if (continuousMode != cm) {
-    continuousMode = cm;
-    update(topPage, scrollX, -1, zoom, rotate, gTrue, gFalse);
-  }
-}
-
-void PDFCore::setSelection(int newSelectPage,
-			   int newSelectULX, int newSelectULY,
-			   int newSelectLRX, int newSelectLRY) {
-  int x0, y0, x1, y1, py;
-  GBool haveSel, newHaveSel;
-  GBool needRedraw, needScroll;
-  GBool moveLeft, moveRight, moveTop, moveBottom;
-  SplashColor xorColor;
-  PDFCorePage *page;
-
-
-  haveSel = selectULX != selectLRX && selectULY != selectLRY;
-  newHaveSel = newSelectULX != newSelectLRX && newSelectULY != newSelectLRY;
-
-  // erase old selection on off-screen bitmap
-  needRedraw = gFalse;
-  if (haveSel) {
-    xorColor[0] = xorColor[1] = xorColor[2] = 0xff;
-    xorRectangle(selectPage, selectULX, selectULY, selectLRX, selectLRY,
-		 new SplashSolidColor(xorColor));
-    needRedraw = gTrue;
-  }
-
-  // draw new selection on off-screen bitmap
-  if (newHaveSel) {
-    xorColor[0] = xorColor[1] = xorColor[2] = 0xff;
-    xorRectangle(newSelectPage, newSelectULX, newSelectULY,
-		 newSelectLRX, newSelectLRY,
-		 new SplashSolidColor(xorColor));
-    needRedraw = gTrue;
-  }
-
-  // check which edges moved
-  if (!haveSel || newSelectPage != selectPage) {
-    moveLeft = moveTop = moveRight = moveBottom = gTrue;
-  } else {
-    moveLeft = newSelectULX != selectULX;
-    moveTop = newSelectULY != selectULY;
-    moveRight = newSelectLRX != selectLRX;
-    moveBottom = newSelectLRY != selectLRY;
-  }
-
-  // redraw currently visible part of bitmap
-  if (needRedraw) {
-    if (!haveSel) {
-      page = findPage(newSelectPage);
-      x0 = newSelectULX;
-      y0 = newSelectULY;
-      x1 = newSelectLRX;
-      y1 = newSelectLRY;
-      redrawWindow(page->xDest + x0, page->yDest + y0,
-		   x1 - x0 + 1, y1 - y0 + 1, gFalse);
-    } else if (!newHaveSel) {
-      if ((page = findPage(selectPage))) {
-	x0 = selectULX;
-	y0 = selectULY;
-	x1 = selectLRX;
-	y1 = selectLRY;
-	redrawWindow(page->xDest + x0, page->yDest + y0,
-		     x1 - x0 + 1, y1 - y0 + 1, gFalse);
-      }
-    } else {
-      page = findPage(newSelectPage);
-      if (moveLeft) {
-	x0 = newSelectULX < selectULX ? newSelectULX : selectULX;
-	y0 = newSelectULY < selectULY ? newSelectULY : selectULY;
-	x1 = newSelectULX > selectULX ? newSelectULX : selectULX;
-	y1 = newSelectLRY > selectLRY ? newSelectLRY : selectLRY;
-	redrawWindow(page->xDest + x0, page->yDest + y0,
-		     x1 - x0 + 1, y1 - y0 + 1, gFalse);
-      }
-      if (moveRight) {
-	x0 = newSelectLRX < selectLRX ? newSelectLRX : selectLRX;
-	y0 = newSelectULY < selectULY ? newSelectULY : selectULY;
-	x1 = newSelectLRX > selectLRX ? newSelectLRX : selectLRX;
-	y1 = newSelectLRY > selectLRY ? newSelectLRY : selectLRY;
-	redrawWindow(page->xDest + x0, page->yDest + y0,
-		     x1 - x0 + 1, y1 - y0 + 1, gFalse);
-      }
-      if (moveTop) {
-	x0 = newSelectULX < selectULX ? newSelectULX : selectULX;
-	y0 = newSelectULY < selectULY ? newSelectULY : selectULY;
-	x1 = newSelectLRX > selectLRX ? newSelectLRX : selectLRX;
-	y1 = newSelectULY > selectULY ? newSelectULY : selectULY;
-	redrawWindow(page->xDest + x0, page->yDest + y0,
-		     x1 - x0 + 1, y1 - y0 + 1, gFalse);
-      }
-      if (moveBottom) {
-	x0 = newSelectULX < selectULX ? newSelectULX : selectULX;
-	y0 = newSelectLRY < selectLRY ? newSelectLRY : selectLRY;
-	x1 = newSelectLRX > selectLRX ? newSelectLRX : selectLRX;
-	y1 = newSelectLRY > selectLRY ? newSelectLRY : selectLRY;
-	redrawWindow(page->xDest + x0, page->yDest + y0,
-		     x1 - x0 + 1, y1 - y0 + 1, gFalse);
+  if (snapToPage) {
+    if (state->getDisplayMode() == displayContinuous ||
+	state->getDisplayMode() == displaySideBySideContinuous) {
+      next = state->getDisplayMode() == displaySideBySideContinuous ? 2 : 1;
+      topPage = tileMap->getFirstPage();
+      // NB: topPage can be out of bounds here, because the scroll
+      // position isn't adjusted until finishUpdate is called, below
+      if (topPage > 0 && topPage <= doc->getNumPages()) {
+	topPageY = tileMap->getPageTopY(topPage);
+	sy = state->getScrollY();
+	dy = sy - topPageY;
+	// note: dy can be negative here if the inter-page gap is at the
+	// top of the window
+	if (-16 < dy && dy < 16) {
+	  state->setScrollPosition(state->getScrollPage(), x, topPageY);
+	} else if (topPage + next <= doc->getNumPages()) {
+	  topPage += next;
+	  topPageY = tileMap->getPageTopY(topPage);
+	  dy = sy - topPageY;
+	  if (-16 < dy && dy < 0) {
+	    state->setScrollPosition(state->getScrollPage(), x, topPageY);
+	  }
+	}
       }
     }
   }
 
-  // switch to new selection coords
-  selectPage = newSelectPage;
-  selectULX = newSelectULX;
-  selectULY = newSelectULY;
-  selectLRX = newSelectLRX;
-  selectLRY = newSelectLRY;
+  finishUpdate(gTrue, gTrue);
+}
 
-  // scroll if necessary
-#if 0 //~tmp
-  if (fullScreen) {
+void PDFCore::scrollToLeftEdge() {
+  scrollTo(0, state->getScrollY());
+}
+
+void PDFCore::scrollToRightEdge() {
+  int horizMax, vertMax;
+
+  tileMap->getScrollLimits(&horizMax, &vertMax);
+  scrollTo(horizMax - state->getWinW(), state->getScrollY());
+}
+
+void PDFCore::scrollToTopEdge() {
+  scrollTo(state->getScrollX(),
+	   tileMap->getPageTopY(tileMap->getFirstPage()));
+}
+
+void PDFCore::scrollToBottomEdge() {
+  scrollTo(state->getScrollX(),
+	   tileMap->getPageBottomY(tileMap->getLastPage()));
+}
+
+void PDFCore::scrollToTopLeft() {
+  scrollTo(tileMap->getPageLeftX(tileMap->getFirstPage()),
+	   tileMap->getPageTopY(tileMap->getFirstPage()));
+}
+
+void PDFCore::scrollToBottomRight() {
+  scrollTo(tileMap->getPageRightX(tileMap->getLastPage()),
+	   tileMap->getPageBottomY(tileMap->getLastPage()));
+}
+
+void PDFCore::scrollToCentered(int page, double x, double y) {
+  int wx, wy, sx, sy;
+
+  startUpdate();
+
+  // scroll to the requested page
+  state->setScrollPosition(page, tileMap->getPageLeftX(page),
+			   tileMap->getPageTopY(page));
+
+  // scroll the requested point to the center of the window
+  cvtUserToWindow(page, x, y, &wx, &wy);
+  sx = state->getScrollX() + wx - state->getWinW() / 2;
+  sy = state->getScrollY() + wy - state->getWinH() / 2;
+  state->setScrollPosition(page, sx, sy);
+
+  finishUpdate(gTrue, gFalse);
+}
+
+void PDFCore::setZoom(double zoom) {
+  int page;
+
+  if (state->getZoom() == zoom) {
     return;
   }
-#endif
-  if (newHaveSel) {
-    page = findPage(selectPage);
-    needScroll = gFalse;
-    x0 = scrollX;
-    y0 = scrollY;
-    if (moveLeft && page->xDest + selectULX < 0) {
-      x0 += page->xDest + selectULX;
-      needScroll = gTrue;
-    } else if (moveRight && page->xDest + selectLRX >= drawAreaWidth) {
-      x0 += page->xDest + selectLRX - drawAreaWidth;
-      needScroll = gTrue;
-    } else if (moveLeft && page->xDest + selectULX >= drawAreaWidth) {
-      x0 += page->xDest + selectULX - drawAreaWidth;
-      needScroll = gTrue;
-    } else if (moveRight && page->xDest + selectLRX < 0) {
-      x0 += page->xDest + selectLRX;
-      needScroll = gTrue;
+  if (!doc || !doc->getNumPages()) {
+    state->setZoom(zoom);
+    return;
+  }
+  startUpdate();
+  page = tileMap->getFirstPage();
+  state->setZoom(zoom);
+  state->setScrollPosition(page, tileMap->getPageLeftX(page),
+			   tileMap->getPageTopY(page));
+  finishUpdate(gTrue, gTrue);
+}
+
+void PDFCore::zoomToRect(int page, double ulx, double uly,
+			 double lrx, double lry) {
+  int x0, y0, x1, y1, sx, sy, t;
+  double dpi, rx, ry, zoom;
+
+  startUpdate();
+
+  // set the new zoom level
+  cvtUserToDev(page, ulx, uly, &x0, &y0);
+  cvtUserToDev(page, lrx, lry, &x1, &y1);
+  if (x0 > x1) {
+    t = x0;  x0 = x1;  x1 = t;
+  }
+  if (y0 > y1) {
+    t = y0;  y0 = y1;  y1 = t;
+  }
+  rx = (double)state->getWinW() / (double)(x1 - x0);
+  ry = (double)state->getWinH() / (double)(y1 - y0);
+  dpi = tileMap->getDPI(page);
+  if (rx < ry) {
+    zoom = rx * (dpi / (0.01 * 72));
+  } else {
+    zoom = ry * (dpi / (0.01 * 72));
+  }
+  state->setZoom(zoom);
+
+  // scroll to the requested page
+  state->setScrollPosition(page, tileMap->getPageLeftX(page),
+			   tileMap->getPageTopY(page));
+
+  // scroll the requested rectangle to the center of the window
+  cvtUserToWindow(page, 0.5 * (ulx + lrx), 0.5 * (uly + lry), &x0, &y0);
+  sx = state->getScrollX() + x0 - state->getWinW() / 2;
+  sy = state->getScrollY() + y0 - state->getWinH() / 2;
+  state->setScrollPosition(page, sx, sy);
+
+  finishUpdate(gTrue, gFalse);
+}
+
+void PDFCore::zoomCentered(double zoom) {
+  int page, wx, wy, sx, sy;
+  double cx, cy;
+
+  if (state->getZoom() == zoom) {
+    return;
+  }
+
+  startUpdate();
+
+  // get the center of the window, in user coords
+  cvtWindowToUser(state->getWinW() / 2, state->getWinH() / 2,
+		  &page, &cx, &cy);
+
+  // set the new zoom level
+  state->setZoom(zoom);
+
+  // scroll to re-center
+  cvtUserToWindow(page, cx, cy, &wx, &wy);
+  sx = state->getScrollX() + wx - state->getWinW() / 2;
+  sy = state->getScrollY() + wy - state->getWinH() / 2;
+  state->setScrollPosition(page, sx, sy);
+
+  finishUpdate(gTrue, gFalse);
+}
+
+// Zoom so that the current page(s) fill the window width.  Maintain
+// the vertical center.
+void PDFCore::zoomToCurrentWidth() {
+  int page0, page1, page, gap;
+  double w, w1, zoom;
+
+  startUpdate();
+
+  // get first and last pages
+  page0 = tileMap->getFirstPage();
+  page1 = tileMap->getLastPage();
+
+  // compute the desired width (in points)
+  gap = 0;
+  switch (state->getDisplayMode()) {
+  case displaySingle:
+  default:
+    w = tileMap->getPageBoxWidth(page0);
+    break;
+  case displayContinuous:
+    w = 0;
+    for (page = page0; page <= page1; ++page) {
+      w1 = tileMap->getPageBoxWidth(page);
+      if (w1 > w) {
+	w = w1;
+      }
     }
-    py = continuousMode ? pageY[selectPage - 1] : 0;
-    if (moveTop && py + selectULY < y0) {
-      y0 = py + selectULY;
-      needScroll = gTrue;
-    } else if (moveBottom && py + selectLRY >= y0 + drawAreaHeight) {
-      y0 = py + selectLRY - drawAreaHeight;
-      needScroll = gTrue;
-    } else if (moveTop && py + selectULY >= y0 + drawAreaHeight) {
-      y0 = py + selectULY - drawAreaHeight;
-      needScroll = gTrue;
-    } else if (moveBottom && py + selectLRY < y0) {
-      y0 = py + selectLRY;
-      needScroll = gTrue;
+    break;
+  case displaySideBySideSingle:
+    w = tileMap->getPageBoxWidth(page0);
+    if (page1 != page0) {
+      w += tileMap->getPageBoxWidth(page1);
+      gap = tileMap->getSideBySidePageSpacing();
     }
-    if (needScroll) {
-      scrollTo(x0, y0);
+    break;
+  case displaySideBySideContinuous:
+    w = 0;
+    for (page = page0; w <= page1; w += 2) {
+      w1 = tileMap->getPageBoxWidth(page);
+      if (page + 1 <= doc->getNumPages()) {
+	w1 += tileMap->getPageBoxWidth(page + 1);
+      }
+      if (w1 > w) {
+	w = w1;
+      }
+    }
+    gap = tileMap->getSideBySidePageSpacing();
+    break;
+  case displayHorizontalContinuous:
+    w = 0;
+    gap = 0;
+    for (page = page0; page <= page1; ++page) {
+      w += tileMap->getPageBoxWidth(page);
+      if (page != page0) {
+	gap += tileMap->getHorizContinuousPageSpacing();
+      }
+    }
+    break;
+  }
+
+  // set the new zoom level
+  zoom = 100.0 * (state->getWinW() - gap) / w;
+  state->setZoom(zoom);
+
+  // scroll so that the first page is at the left edge of the window
+  state->setScrollPosition(page0, tileMap->getPageLeftX(page0),
+			   tileMap->getPageTopY(page0));
+
+  finishUpdate(gTrue, gFalse);
+}
+
+void PDFCore::setRotate(int rotate) {
+  int page;
+
+  if (state->getRotate() == rotate) {
+    return;
+  }
+  if (!doc || !doc->getNumPages()) {
+    state->setRotate(rotate);
+    return;
+  }
+  startUpdate();
+  page = tileMap->getFirstPage();
+  state->setRotate(rotate);
+  state->setScrollPosition(page, tileMap->getPageLeftX(page),
+			   tileMap->getPageTopY(page));
+  finishUpdate(gTrue, gTrue);
+}
+
+void PDFCore::setDisplayMode(DisplayMode mode) {
+  int page;
+
+  if (state->getDisplayMode() == mode) {
+    return;
+  }
+  if (!doc || !doc->getNumPages()) {
+    state->setDisplayMode(mode);
+    return;
+  }
+  startUpdate();
+  page = tileMap->getFirstPage();
+  state->setDisplayMode(mode);
+  state->setScrollPosition(page, tileMap->getPageLeftX(page),
+			   tileMap->getPageTopY(page));
+  finishUpdate(gTrue, gTrue);
+}
+
+void PDFCore::setOCGState(OptionalContentGroup *ocg, GBool ocgState) {
+  if (ocgState != ocg->getState()) {
+    ocg->setState(ocgState);
+    state->optionalContentChanged();
+    invalidateWholeWindow();
+  }
+}
+
+void PDFCore::setSelectMode(SelectMode mode) {
+  if (mode != selectMode) {
+    selectMode = mode;
+    clearSelection();
+  }
+}
+
+SplashColorPtr PDFCore::getSelectionColor() {
+  return state->getSelectColor();
+}
+
+void PDFCore::setSelectionColor(SplashColor color) {
+  int wx0, wy0, wx1, wy1;
+
+  state->setSelectColor(color);
+  if (state->hasSelection()) {
+    getSelectionBBox(&wx0, &wy0, &wx1, &wy1);
+    checkInvalidate(wx0, wy0, wx1 - wx0, wy1 - wy0);
+  }
+}
+
+void PDFCore::setSelection(int page, int x0, int y0, int x1, int y1) {
+  SelectRect *rect;
+  GBool moveLeft, moveTop, moveRight, moveBottom, needScroll;
+  double selectX0, selectY0, selectX1, selectY1;
+  int oldWx0, oldWy0, oldWx1, oldWy1, ix0, iy0, ix1, iy1;
+  int wx0, wy0, wx1, wy1, sx, sy, t;
+
+
+  // if selection rectangle is empty, clear the selection
+  if (x0 == x1 || y0 == y1) {
+    clearSelection();
+    return;
+  }
+
+  // x0 = left, x1 = right
+  // y0 = top, y1 = bottom
+  if (x0 > x1) {
+    t = x0;  x0 = x1;  x1 = t;
+  }
+  if (y0 > y1) {
+    t = y0;  y0 = y1;  y1 = t;
+  }
+
+  // convert new selection coords to user space and window space
+  tileMap->cvtDevToUser(page, x0, y0, &selectX0, &selectY0);
+  tileMap->cvtDevToUser(page, x1, y1, &selectX1, &selectY1);
+  cvtUserToWindow(page, selectX0, selectY0, &wx0, &wy0);
+  cvtUserToWindow(page, selectX1, selectY1, &wx1, &wy1);
+  if (wx0 > wx1) {
+    t = wx0;  wx0 = wx1;  wx1 = t;
+  }
+  if (wy0 > wy1) {
+    t = wy0;  wy0 = wy1;  wy1 = t;
+  }
+
+  // convert current selection coords to window space;
+  // check which edges moved
+  if (state->hasSelection()) {
+    rect = state->getSelectRect(0);
+    tileMap->cvtUserToWindow(rect->page, rect->x0, rect->y0, &oldWx0, &oldWy0);
+    tileMap->cvtUserToWindow(rect->page, rect->x1, rect->y1, &oldWx1, &oldWy1);
+    if (oldWx0 > oldWx1) {
+      t = oldWx0;  oldWx0 = oldWx1;  oldWx1 = t;
+    }
+    if (oldWy0 > oldWy1) {
+      t = oldWy0;  oldWy0 = oldWy1;  oldWy1 = t;
+    }
+    moveLeft = wx0 != oldWx0;
+    moveTop = wy0 != oldWy0;
+    moveRight = wx1 != oldWx1;
+    moveBottom = wy1 != oldWy1;
+  } else {
+    oldWx0 = wx0;
+    oldWy0 = wy0;
+    oldWx1 = wx1;
+    oldWy1 = wy1;
+    moveLeft = moveTop = moveRight = moveBottom = gTrue;
+  }
+
+  // set the new selection
+  state->setSelection(page, selectX0, selectY0, selectX1, selectY1);
+
+  // scroll if necessary
+  needScroll = gFalse;
+  sx = state->getScrollX();
+  sy = state->getScrollY();
+  if (moveLeft && wx0 < 0) {
+    sx += wx0;
+    needScroll = gTrue;
+  } else if (moveRight && wx1 >= state->getWinW()) {
+    sx += wx1 - state->getWinW();
+    needScroll = gTrue;
+  } else if (moveLeft && wx0 >= state->getWinW()) {
+    sx += wx0 - state->getWinW();
+    needScroll = gTrue;
+  } else if (moveRight && wx1 < 0) {
+    sx += wx1;
+    needScroll = gTrue;
+  }
+  if (moveTop && wy0 < 0) {
+    sy += wy0;
+    needScroll = gTrue;
+  } else if (moveBottom && wy1 >= state->getWinH()) {
+    sy += wy1 - state->getWinH();
+    needScroll = gTrue;
+  } else if (moveTop && wy0 >= state->getWinH()) {
+    sy += wy0 - state->getWinH();
+    needScroll = gTrue;
+  } else if (moveBottom && wy1 < 0) {
+    sy += wy1;
+    needScroll = gTrue;
+  }
+  if (needScroll) {
+    scrollTo(sx, sy);
+  } else {
+    ix0 = (wx0 < oldWx0) ? wx0 : oldWx0;
+    iy0 = (wy0 < oldWy0) ? wy0 : oldWy0;
+    ix1 = (wx1 > oldWx1) ? wx1 : oldWx1;
+    iy1 = (wy1 > oldWy1) ? wy1 : oldWy1;
+    checkInvalidate(ix0, iy0, ix1 - ix0, iy1 - iy0);
+  }
+}
+
+void PDFCore::setLinearSelection(int page, TextPosition *pos0,
+				 TextPosition *pos1) {
+  TextPosition begin, end;
+  GList *rects;
+  GBool moveLeft, moveTop, moveRight, moveBottom, needScroll;
+  double x0, y0, x1, y1, x2, y2, x3, y3;
+  double ux0, uy0, ux1, uy1;
+  int oldWx0, oldWy0, oldWx1, oldWy1, ix0, iy0, ix1, iy1;
+  int wx0, wy0, wx1, wy1;
+  int sx, sy, colIdx;
+
+
+  // if selection rectangle is empty, clear the selection
+  if (*pos0 == *pos1) {
+    clearSelection();
+    return;
+  }
+
+  // swap into correct order
+  if (*pos0 < *pos1) {
+    begin = *pos0;
+    end = *pos1;
+  } else {
+    begin = *pos1;
+    end = *pos0;
+  }
+
+  // build the list of rectangles
+  //~ this doesn't handle RtL, vertical, or rotated text
+  loadText(page);
+  rects = new GList();
+  if (begin.colIdx == end.colIdx &&
+      begin.parIdx == end.parIdx &&
+      begin.lineIdx == end.lineIdx) {
+    // same line
+    text->convertPosToPointUpper(&begin, &x0, &y0);
+    text->convertPosToPointLower(&end, &x1, &y1);
+    cvtDevToUser(page, (int)(x0 + 0.5), (int)(y0 + 0.5), &ux0, &uy0);
+    cvtDevToUser(page, (int)(x1 + 0.5), (int)(y1 + 0.5), &ux1, &uy1);
+    rects->append(new SelectRect(page, ux0, uy0, ux1, uy1));
+  } else if (begin.colIdx == end.colIdx) {
+    // same column
+    text->convertPosToPointUpper(&begin, &x0, &y0);
+    text->convertPosToPointRightEdge(&begin, &x1, &y1);
+    text->convertPosToPointLeftEdge(&end, &x2, &y2);
+    text->convertPosToPointLower(&end, &x3, &y3);
+    cvtDevToUser(page, (int)(x0 + 0.5), (int)(y0 + 0.5), &ux0, &uy0);
+    cvtDevToUser(page, (int)(x1 + 0.5), (int)(y1 + 0.5), &ux1, &uy1);
+    rects->append(new SelectRect(page, ux0, uy0, ux1, uy1));
+    cvtDevToUser(page, (int)(x2 + 0.5), (int)(y1 + 0.5), &ux0, &uy0);
+    cvtDevToUser(page, (int)(x1 + 0.5), (int)(y2 + 0.5), &ux1, &uy1);
+    rects->append(new SelectRect(page, ux0, uy0, ux1, uy1));
+    cvtDevToUser(page, (int)(x2 + 0.5), (int)(y2 + 0.5), &ux0, &uy0);
+    cvtDevToUser(page, (int)(x3 + 0.5), (int)(y3 + 0.5), &ux1, &uy1);
+    rects->append(new SelectRect(page, ux0, uy0, ux1, uy1));
+  } else {
+    // different columns
+    text->convertPosToPointUpper(&begin, &x0, &y0);
+    text->convertPosToPointRightEdge(&begin, &x1, &y1);
+    text->getColumnLowerLeft(begin.colIdx, &x2, &y2);
+    cvtDevToUser(page, (int)(x0 + 0.5), (int)(y0 + 0.5), &ux0, &uy0);
+    cvtDevToUser(page, (int)(x1 + 0.5), (int)(y1 + 0.5), &ux1, &uy1);
+    rects->append(new SelectRect(page, ux0, uy0, ux1, uy1));
+    cvtDevToUser(page, (int)(x2 + 0.5), (int)(y1 + 0.5), &ux0, &uy0);
+    cvtDevToUser(page, (int)(x1 + 0.5), (int)(y2 + 0.5), &ux1, &uy1);
+    rects->append(new SelectRect(page, ux0, uy0, ux1, uy1));
+    for (colIdx = begin.colIdx + 1; colIdx < end.colIdx; ++colIdx) {
+      text->getColumnLowerLeft(colIdx, &x0, &y0);
+      text->getColumnUpperRight(colIdx, &x1, &y1);
+      cvtDevToUser(page, (int)(x0 + 0.5), (int)(y1 + 0.5), &ux0, &uy0);
+      cvtDevToUser(page, (int)(x1 + 0.5), (int)(y0 + 0.5), &ux1, &uy1);
+      rects->append(new SelectRect(page, ux0, uy0, ux1, uy1));
+    }
+    text->getColumnUpperRight(end.colIdx, &x0, &y0);
+    text->convertPosToPointLeftEdge(&end, &x1, &y1);
+    text->convertPosToPointLower(&end, &x2, &y2);
+    cvtDevToUser(page, (int)(x1 + 0.5), (int)(y0 + 0.5), &ux0, &uy0);
+    cvtDevToUser(page, (int)(x0 + 0.5), (int)(y1 + 0.5), &ux1, &uy1);
+    rects->append(new SelectRect(page, ux0, uy0, ux1, uy1));
+    cvtDevToUser(page, (int)(x1 + 0.5), (int)(y1 + 0.5), &ux0, &uy0);
+    cvtDevToUser(page, (int)(x2 + 0.5), (int)(y2 + 0.5), &ux1, &uy1);
+    rects->append(new SelectRect(page, ux0, uy0, ux1, uy1));
+  }
+
+  // get window coord bboxes for old selection and new selection;
+  // check which edges moved
+  if (state->hasSelection()) {
+    getSelectionBBox(&oldWx0, &oldWy0, &oldWx1, &oldWy1);
+    getSelectRectListBBox(rects, &wx0, &wy0, &wx1, &wy1);
+    moveLeft = wx0 != oldWx0;
+    moveTop = wy0 != oldWy0;
+    moveRight = wx1 != oldWx1;
+    moveBottom = wy1 != oldWy1;
+  } else {
+    getSelectRectListBBox(rects, &wx0, &wy0, &wx1, &wy1);
+    oldWx0 = wx0;
+    oldWy0 = wy0;
+    oldWx1 = wx1;
+    oldWy1 = wy1;
+    moveLeft = moveTop = moveRight = moveBottom = gTrue;
+  }
+
+  // set the new selection
+  state->setSelection(rects);
+
+  // scroll if necessary
+  needScroll = gFalse;
+  sx = state->getScrollX();
+  sy = state->getScrollY();
+  if (moveLeft && wx0 < 0) {
+    sx += wx0;
+    needScroll = gTrue;
+  } else if (moveRight && wx1 >= state->getWinW()) {
+    sx += wx1 - state->getWinW();
+    needScroll = gTrue;
+  } else if (moveLeft && wx0 >= state->getWinW()) {
+    sx += wx0 - state->getWinW();
+    needScroll = gTrue;
+  } else if (moveRight && wx1 < 0) {
+    sx += wx1;
+    needScroll = gTrue;
+  }
+  if (moveTop && wy0 < 0) {
+    sy += wy0;
+    needScroll = gTrue;
+  } else if (moveBottom && wy1 >= state->getWinH()) {
+    sy += wy1 - state->getWinH();
+    needScroll = gTrue;
+  } else if (moveTop && wy0 >= state->getWinH()) {
+    sy += wy0 - state->getWinH();
+    needScroll = gTrue;
+  } else if (moveBottom && wy1 < 0) {
+    sy += wy1;
+    needScroll = gTrue;
+  }
+  if (needScroll) {
+    scrollTo(sx, sy);
+  } else {
+    ix0 = (wx0 < oldWx0) ? wx0 : oldWx0;
+    iy0 = (wy0 < oldWy0) ? wy0 : oldWy0;
+    ix1 = (wx1 > oldWx1) ? wx1 : oldWx1;
+    iy1 = (wy1 > oldWy1) ? wy1 : oldWy1;
+    checkInvalidate(ix0, iy0, ix1 - ix0, iy1 - iy0);
+  }
+}
+
+void PDFCore::clearSelection() {
+  int wx0, wy0, wx1, wy1;
+
+  if (state->hasSelection()) {
+    getSelectionBBox(&wx0, &wy0, &wx1, &wy1);
+    state->clearSelection();
+    checkInvalidate(wx0, wy0, wx1 - wx0, wy1 - wy0);
+  }
+}
+
+void PDFCore::startSelectionDrag(int pg, int x, int y) {
+  clearSelection();
+  if (selectMode == selectModeBlock) {
+    selectPage = pg;
+    selectStartX = x;
+    selectStartY = y;
+  } else { // selectModeLinear
+    loadText(pg);
+    if (text->findPointInside(x, y, &selectStartPos)) {
+      selectPage = pg;
+    } else {
+      selectPage = 0;
     }
   }
 }
 
-void PDFCore::moveSelection(int pg, int x, int y) {
-  int newSelectULX, newSelectULY, newSelectLRX, newSelectLRY;
+void PDFCore::moveSelectionDrag(int pg, int x, int y) {
+  TextPosition pos;
 
   // don't allow selections to span multiple pages
+  // -- this also handles the case where a linear selection was started
+  //    outside any text column, in which case selectPage = 0
   if (pg != selectPage) {
     return;
   }
 
-  // move appropriate edges of selection
-  if (lastDragLeft) {
-    if (x < selectLRX) {
-      newSelectULX = x;
-      newSelectLRX = selectLRX;
-    } else {
-      newSelectULX = selectLRX;
-      newSelectLRX = x;
-      lastDragLeft = gFalse;
-    }
-  } else {
-    if (x > selectULX) {
-      newSelectULX = selectULX;
-      newSelectLRX = x;
-    } else {
-      newSelectULX = x;
-      newSelectLRX = selectULX;
-      lastDragLeft = gTrue;
+  if (selectMode == selectModeBlock) {
+    setSelection(pg, selectStartX, selectStartY, x, y);
+  } else { // selectModeLinear
+    loadText(pg);
+    if (text->findPointNear(x, y, &pos)) {
+      setLinearSelection(pg, &selectStartPos, &pos);
     }
   }
-  if (lastDragTop) {
-    if (y < selectLRY) {
-      newSelectULY = y;
-      newSelectLRY = selectLRY;
-    } else {
-      newSelectULY = selectLRY;
-      newSelectLRY = y;
-      lastDragTop = gFalse;
-    }
-  } else {
-    if (y > selectULY) {
-      newSelectULY = selectULY;
-      newSelectLRY = y;
-    } else {
-      newSelectULY = y;
-      newSelectLRY = selectULY;
-      lastDragTop = gTrue;
-    }
-  }
-
-  // redraw the selection
-  setSelection(selectPage, newSelectULX, newSelectULY,
-	       newSelectLRX, newSelectLRY);
 }
 
-void PDFCore::xorRectangle(int pg, int x0, int y0, int x1, int y1,
-			   SplashPattern *pattern, PDFCoreTile *oneTile) {
-  Splash *splash;
-  SplashPath *path;
-  PDFCorePage *page;
-  PDFCoreTile *tile;
-  SplashCoord xx0, yy0, xx1, yy1;
-  int xi, yi, wi, hi;
-  int i;
+void PDFCore::finishSelectionDrag() {
+  // nothing
+}
 
-  if ((page = findPage(pg))) {
-    for (i = 0; i < page->tiles->getLength(); ++i) {
-      tile = (PDFCoreTile *)page->tiles->get(i);
-      if (!oneTile || tile == oneTile) {
-	splash = new Splash(tile->bitmap);
-	splash->setFillPattern(pattern->copy());
-	xx0 = (SplashCoord)(x0 - tile->xMin);
-	yy0 = (SplashCoord)(y0 - tile->yMin);
-	xx1 = (SplashCoord)(x1 - tile->xMin);
-	yy1 = (SplashCoord)(y1 - tile->yMin);
-	path = new SplashPath();
-	path->moveTo(xx0, yy0);
-	path->lineTo(xx1, yy0);
-	path->lineTo(xx1, yy1);
-	path->lineTo(xx0, yy1);
-	path->close();
-	splash->xorFill(path, gTrue);
-	delete path;
-	delete splash;
-	xi = x0 - tile->xMin;
-	wi = x1 - x0;
-	if (xi < 0) {
-	  wi += xi;
-	  xi = 0;
-	}
-	if (xi + wi > tile->bitmap->getWidth()) {
-	  wi = tile->bitmap->getWidth() - xi;
-	}
-	yi = y0 - tile->yMin;
-	hi = y1 - y0;
-	if (yi < 0) {
-	  hi += yi;
-	  yi = 0;
-	}
-	if (yi + hi > tile->bitmap->getHeight()) {
-	  hi = tile->bitmap->getHeight() - yi;
-	}
-	updateTileData(tile, xi, yi, wi, hi);
-      }
-    }
+void PDFCore::selectWord(int pg, int x, int y) {
+  TextPosition endPos;
+
+  loadText(pg);
+  if (text->findWordPoints(x, y, &selectStartPos, &endPos)) {
+    selectPage = pg;
+    setLinearSelection(pg, &selectStartPos, &endPos);
+  } else {
+    selectPage = 0;
   }
-  delete pattern;
+}
+
+void PDFCore::selectLine(int pg, int x, int y) {
+  TextPosition endPos;
+
+  loadText(pg);
+  if (text->findLinePoints(x, y, &selectStartPos, &endPos)) {
+    selectPage = pg;
+    setLinearSelection(pg, &selectStartPos, &endPos);
+  } else {
+    selectPage = 0;
+  }
 }
 
 GBool PDFCore::getSelection(int *pg, double *ulx, double *uly,
 			    double *lrx, double *lry) {
-  if (selectULX == selectLRX || selectULY == selectLRY) {
+  SelectRect *rect;
+  double xMin, yMin, xMax, yMax;
+  int page, i;
+
+  if (!state->hasSelection()) {
     return gFalse;
   }
-  *pg = selectPage;
-  cvtDevToUser(selectPage, selectULX, selectULY, ulx, uly);
-  cvtDevToUser(selectPage, selectLRX, selectLRY, lrx, lry);
+  page = state->getSelectRect(0)->page;
+  xMin = yMin = xMax = yMax = 0;
+  for (i = 0; i < state->getNumSelectRects(); ++i) {
+    rect = state->getSelectRect(i);
+    if (rect->page != page) {
+      continue;
+    }
+    if (i == 0) {
+      xMin = xMax = rect->x0;
+      yMin = yMax = rect->y0;
+    } else {
+      if (rect->x0 < xMin) {
+	xMin = rect->x0;
+      } else if (rect->x0 > xMax) {
+	xMax = rect->x0;
+      }
+      if (rect->y0 < yMin) {
+	yMin = rect->y0;
+      } else if (rect->y0 > yMax) {
+	yMax = rect->y0;
+      }
+    }
+    if (rect->x1 < xMin) {
+      xMin = rect->x1;
+    } else if (rect->x1 > xMax) {
+      xMax = rect->x1;
+    }
+    if (rect->y1 < yMin) {
+      yMin = rect->y1;
+    } else if (rect->y1 > yMax) {
+      yMax = rect->y1;
+    }
+  }
+  *pg = page;
+  *ulx = xMin;
+  *uly = yMax;
+  *lrx = xMax;
+  *lry = yMin;
   return gTrue;
+}
+
+GBool PDFCore::hasSelection() {
+  return state->hasSelection();
+}
+
+void PDFCore::setTextExtractionMode(TextOutputMode mode) {
+  if (textOutCtrl.mode != mode) {
+    textOutCtrl.mode = mode;
+    if (text) {
+      delete text;
+      text = NULL;
+    }
+    textPage = 0;
+    textDPI = 0;
+    textRotate = 0;
+  }
+}
+
+GBool PDFCore::getDiscardDiagonalText() {
+  return textOutCtrl.discardDiagonalText;
+}
+
+void PDFCore::setDiscardDiagonalText(GBool discard) {
+  if (textOutCtrl.discardDiagonalText != discard) {
+    textOutCtrl.discardDiagonalText = discard;
+    if (text) {
+      delete text;
+      text = NULL;
+    }
+    textPage = 0;
+    textDPI = 0;
+    textRotate = 0;
+  }
 }
 
 GString *PDFCore::extractText(int pg, double xMin, double yMin,
 			      double xMax, double yMax) {
-  PDFCorePage *page;
-  TextOutputDev *textOut;
   int x0, y0, x1, y1, t;
-  GString *s;
 
-  if (!doc->okToCopy()) {
+  loadText(pg);
+  cvtUserToDev(pg, xMin, yMin, &x0, &y0);
+  cvtUserToDev(pg, xMax, yMax, &x1, &y1);
+  if (x0 > x1) {
+    t = x0; x0 = x1; x1 = t;
+  }
+  if (y0 > y1) {
+    t = y0; y0 = y1; y1 = t;
+  }
+  return text->getText(x0, y0, x1, y1);
+}
+
+GString *PDFCore::getSelectedText() {
+  SelectRect *rect;
+  GString *ret, *s;
+  int x0, y0, x1, y1, t, i;
+
+  if (!state->hasSelection()) {
     return NULL;
   }
-  if ((page = findPage(pg))) {
-    cvtUserToDev(pg, xMin, yMin, &x0, &y0);
-    cvtUserToDev(pg, xMax, yMax, &x1, &y1);
+  ret = new GString();
+  for (i = 0; i < state->getNumSelectRects(); ++i) {
+    rect = state->getSelectRect(i);
+    loadText(rect->page);
+    cvtUserToDev(rect->page, rect->x0, rect->y0, &x0, &y0);
+    cvtUserToDev(rect->page, rect->x1, rect->y1, &x1, &y1);
     if (x0 > x1) {
       t = x0; x0 = x1; x1 = t;
     }
     if (y0 > y1) {
       t = y0; y0 = y1; y1 = t;
     }
-    s = page->text->getText(x0, y0, x1, y1);
-  } else {
-    textOut = new TextOutputDev(NULL, gTrue, gFalse, gFalse);
-    if (textOut->isOk()) {
-      doc->displayPage(textOut, pg, dpi, dpi, rotate, gFalse, gTrue, gFalse);
-      textOut->cvtUserToDev(xMin, yMin, &x0, &y0);
-      textOut->cvtUserToDev(xMax, yMax, &x1, &y1);
-      if (x0 > x1) {
-	t = x0; x0 = x1; x1 = t;
-      }
-      if (y0 > y1) {
-	t = y0; y0 = y1; y1 = t;
-      }
-      s = textOut->getText(x0, y0, x1, y1);
-    } else {
-      s = new GString();
-    }
-    delete textOut;
+    s = text->getText(x0, y0, x1, y1, state->getNumSelectRects() > 1);
+    ret->append(s);
+    delete s;
   }
-  return s;
+  return ret;
 }
 
 GBool PDFCore::find(char *s, GBool caseSensitive, GBool next, GBool backward,
-		    GBool onePageOnly) {
+		    GBool wholeWord, GBool onePageOnly) {
   Unicode *u;
   int len, i;
   GBool ret;
 
   // convert to Unicode
-  len = strlen(s);
+  len = (int)strlen(s);
   u = (Unicode *)gmallocn(len, sizeof(Unicode));
   for (i = 0; i < len; ++i) {
     u[i] = (Unicode)(s[i] & 0xff);
   }
 
-  ret = findU(u, len, caseSensitive, next, backward, onePageOnly);
+  ret = findU(u, len, caseSensitive, next, backward, wholeWord, onePageOnly);
 
   gfree(u);
   return ret;
 }
 
 GBool PDFCore::findU(Unicode *u, int len, GBool caseSensitive,
-		     GBool next, GBool backward, GBool onePageOnly) {
+		     GBool next, GBool backward, GBool wholeWord,
+		     GBool onePageOnly) {
   TextOutputDev *textOut;
+  SelectRect *rect;
   double xMin, yMin, xMax, yMax;
-  PDFCorePage *page;
-  PDFCoreTile *tile;
-  int pg;
+  int topPage, pg, x, y, x2, y2;
   GBool startAtTop, startAtLast, stopAtLast;
 
   // check for zero-length string
@@ -1345,36 +1481,47 @@ GBool PDFCore::findU(Unicode *u, int len, GBool caseSensitive,
   // search current page starting at previous result, current
   // selection, or top/bottom of page
   startAtTop = startAtLast = gFalse;
+  rect = NULL;
   xMin = yMin = xMax = yMax = 0;
+  topPage = tileMap->getFirstPage();
   pg = topPage;
   if (next) {
-    startAtLast = gTrue;
-  } else if (selectULX != selectLRX && selectULY != selectLRY) {
-    pg = selectPage;
+    if (textPage >= 1 && textPage <= doc->getNumPages()) {
+      startAtLast = gTrue;
+      pg = textPage;
+    }
+  } else if (state->hasSelection()) {
+    rect = state->getSelectRect(0);
+    pg = rect->page;
+    cvtUserToDev(pg, rect->x0, rect->y0, &x, &y);
+    cvtUserToDev(pg, rect->x1, rect->y1, &x2, &y2);
+    if (x2 < x) {
+      x = x2;
+    }
+    if (y2 < y) {
+      y = y2;
+    }
     if (backward) {
-      xMin = selectULX - 1;
-      yMin = selectULY - 1;
+      xMin = x - 1;
+      yMin = y - 1;
     } else {
-      xMin = selectULX + 1;
-      yMin = selectULY + 1;
+      xMin = x + 1;
+      yMin = y + 1;
     }
   } else {
     startAtTop = gTrue;
   }
-  if (!(page = findPage(pg))) {
-    displayPage(pg, zoom, rotate, gTrue, gFalse);
-    page = findPage(pg);
-  }
-  if (page->text->findText(u, len, startAtTop, gTrue, startAtLast, gFalse,
-			   caseSensitive, backward,
-			   &xMin, &yMin, &xMax, &yMax)) {
+  loadText(pg);
+  if (text->findText(u, len, startAtTop, gTrue, startAtLast, gFalse,
+		     caseSensitive, backward, wholeWord,
+		     &xMin, &yMin, &xMax, &yMax)) {
     goto found;
   }
 
   if (!onePageOnly) {
 
     // search following/previous pages
-    textOut = new TextOutputDev(NULL, gTrue, gFalse, gFalse);
+    textOut = new TextOutputDev(NULL, &textOutCtrl, gFalse);
     if (!textOut->isOk()) {
       delete textOut;
       goto notFound;
@@ -1384,7 +1531,7 @@ GBool PDFCore::findU(Unicode *u, int len, GBool caseSensitive,
 	 pg += backward ? -1 : 1) {
       doc->displayPage(textOut, pg, 72, 72, 0, gFalse, gTrue, gFalse);
       if (textOut->findText(u, len, gTrue, gTrue, gFalse, gFalse,
-			    caseSensitive, backward,
+			    caseSensitive, backward, wholeWord,
 			    &xMin, &yMin, &xMax, &yMax)) {
 	delete textOut;
 	goto foundPage;
@@ -1397,7 +1544,7 @@ GBool PDFCore::findU(Unicode *u, int len, GBool caseSensitive,
 	 pg += backward ? -1 : 1) {
       doc->displayPage(textOut, pg, 72, 72, 0, gFalse, gTrue, gFalse);
       if (textOut->findText(u, len, gTrue, gTrue, gFalse, gFalse,
-			    caseSensitive, backward,
+			    caseSensitive, backward, wholeWord,
 			    &xMin, &yMin, &xMax, &yMax)) {
 	delete textOut;
 	goto foundPage;
@@ -1415,12 +1562,13 @@ GBool PDFCore::findU(Unicode *u, int len, GBool caseSensitive,
       stopAtLast = gTrue;
     } else {
       stopAtLast = gFalse;
-      xMax = selectLRX;
-      yMax = selectLRY;
+      cvtUserToDev(pg, rect->x1, rect->y1, &x, &y);
+      xMax = x;
+      yMax = y;
     }
-    if (page->text->findText(u, len, gTrue, gFalse, gFalse, stopAtLast,
-			     caseSensitive, backward,
-			     &xMin, &yMin, &xMax, &yMax)) {
+    if (text->findText(u, len, gTrue, gFalse, gFalse, stopAtLast,
+		       caseSensitive, backward, wholeWord,
+		       &xMin, &yMin, &xMax, &yMax)) {
       goto found;
     }
   }
@@ -1432,18 +1580,17 @@ GBool PDFCore::findU(Unicode *u, int len, GBool caseSensitive,
 
   // found on a different page
  foundPage:
-  update(pg, scrollX, continuousMode ? -1 : 0, zoom, rotate, gFalse, gTrue);
-  page = findPage(pg);
-  if (!page->text->findText(u, len, gTrue, gTrue, gFalse, gFalse,
-			    caseSensitive, backward,
-			    &xMin, &yMin, &xMax, &yMax)) {
+  displayPage(pg, gTrue, gFalse);
+  loadText(pg);
+  if (!text->findText(u, len, gTrue, gTrue, gFalse, gFalse,
+		      caseSensitive, backward, wholeWord,
+		      &xMin, &yMin, &xMax, &yMax)) {
     // this can happen if coalescing is bad
     goto notFound;
   }
 
   // found: change the selection
  found:
-  tile = (PDFCoreTile *)page->tiles->get(0);
   setSelection(pg, (int)floor(xMin), (int)floor(yMin),
 	       (int)ceil(xMax), (int)ceil(yMax));
 
@@ -1451,336 +1598,427 @@ GBool PDFCore::findU(Unicode *u, int len, GBool caseSensitive,
   return gTrue;
 }
 
+GList *PDFCore::findAll(Unicode *u, int len, GBool caseSensitive,
+			GBool wholeWord, int firstPage, int lastPage) {
+  GList *results = new GList();
+
+  TextOutputDev *textOut = new TextOutputDev(NULL, &textOutCtrl, gFalse);
+  if (!textOut->isOk()) {
+    delete textOut;
+    return results;
+  }
+
+  for (int pg = firstPage; pg <= lastPage; ++pg) {
+    doc->displayPage(textOut, pg, 72, 72, 0, gFalse, gTrue, gFalse);
+    GBool first = gTrue;
+    while (1) {
+      double xMin, yMin, xMax, yMax;
+      if (!textOut->findText(u, len, first, gTrue, !first, gFalse,
+			    caseSensitive, gFalse, wholeWord,
+			    &xMin, &yMin, &xMax, &yMax)) {
+	break;
+      }
+      double uxMin, uyMin, uxMax, uyMax, t;
+      textOut->cvtDevToUser(xMin, yMin, &uxMin, &uyMin);
+      textOut->cvtDevToUser(xMax, yMax, &uxMax, &uyMax);
+      if (uxMin > uxMax) {
+	t = uxMin;  uxMin = uxMax;  uxMax = t;
+      }
+      if (uyMin > uyMax) {
+	t = uyMin;  uyMin = uyMax;  uyMax = t;
+      }
+      results->append(new FindResult(pg, uxMin, uyMin, uxMax, uyMax));
+      first = gFalse;
+    }
+  }
+
+  delete textOut;
+
+  return results;
+}
+
 
 GBool PDFCore::cvtWindowToUser(int xw, int yw,
 			       int *pg, double *xu, double *yu) {
-  PDFCorePage *page;
-  PDFCoreTile *tile;
-  int i, j;
-
-  for (i = 0; i < pages->getLength(); ++i) {
-    page = (PDFCorePage *)pages->get(i);
-    for (j = 0; j < page->tiles->getLength(); ++j) {
-      tile = (PDFCoreTile *)page->tiles->get(j);
-      if ((xw >= tile->xDest && xw < tile->xDest + tile->xMax - tile->xMin &&
-	   yw >= tile->yDest && yw < tile->yDest + tile->yMax - tile->yMin) ||
-	  ((tile->edges & pdfCoreTileTopEdge) &&
-	   (tile->edges & pdfCoreTileLeftEdge) &&
-	   xw < tile->xDest + tile->xMax - tile->xMin &&
-	   yw < tile->yDest + tile->yMax - tile->yMin) ||
-	  ((tile->edges & pdfCoreTileTopEdge) &&
-	   (tile->edges & pdfCoreTileRightEdge) &&
-	   xw >= tile->xDest &&
-	   yw < tile->yDest + tile->yMax - tile->yMin) ||
-	  ((tile->edges & pdfCoreTileTopEdge) &&
-	   xw >= tile->xDest && xw < tile->xDest + tile->xMax - tile->xMin &&
-	   yw < tile->yDest + tile->yMax - tile->yMin) ||
-	  ((tile->edges & pdfCoreTileBottomEdge) &&
-	   (tile->edges & pdfCoreTileLeftEdge) &&
-	   xw < tile->xDest + tile->xMax - tile->xMin &&
-	   yw >= tile->yDest) ||
-	  ((tile->edges & pdfCoreTileBottomEdge) &&
-	   (tile->edges & pdfCoreTileRightEdge) &&
-	   xw >= tile->xDest &&
-	   yw >= tile->yDest) ||
-	  ((tile->edges & pdfCoreTileBottomEdge) &&
-	   xw >= tile->xDest && xw < tile->xDest + tile->xMax - tile->xMin &&
-	   yw >= tile->yDest) ||
-	  ((tile->edges & pdfCoreTileLeftEdge) &&
-	   xw < tile->xDest + tile->xMax - tile->xMin &&
-	   yw >= tile->yDest && yw < tile->yDest + tile->yMax - tile->yMin) ||
-	  ((tile->edges & pdfCoreTileRightEdge) &&
-	   xw >= tile->xDest &&
-	   yw >= tile->yDest && yw < tile->yDest + tile->yMax - tile->yMin)) {
-	*pg = page->page;
-	xw -= tile->xDest;
-	yw -= tile->yDest;
-	*xu = tile->ictm[0] * xw + tile->ictm[2] * yw + tile->ictm[4];
-	*yu = tile->ictm[1] * xw + tile->ictm[3] * yw + tile->ictm[5];
-	return gTrue;
-      }
-    }
-  }
-  *pg = 0;
-  *xu = *yu = 0;
-  return gFalse;
+  return tileMap->cvtWindowToUser(xw, yw, pg, xu, yu);
 }
 
 GBool PDFCore::cvtWindowToDev(int xw, int yw, int *pg, int *xd, int *yd) {
-  PDFCorePage *page;
-  PDFCoreTile *tile;
-  int i, j;
-
-  for (i = 0; i < pages->getLength(); ++i) {
-    page = (PDFCorePage *)pages->get(i);
-    for (j = 0; j < page->tiles->getLength(); ++j) {
-      tile = (PDFCoreTile *)page->tiles->get(j);
-      if ((xw >= tile->xDest && xw < tile->xDest + tile->xMax - tile->xMin &&
-	   yw >= tile->yDest && yw < tile->yDest + tile->yMax - tile->yMin) ||
-	  ((tile->edges & pdfCoreTileTopEdge) &&
-	   (tile->edges & pdfCoreTileLeftEdge) &&
-	   xw < tile->xDest + tile->xMax - tile->xMin &&
-	   yw < tile->yDest + tile->yMax - tile->yMin) ||
-	  ((tile->edges & pdfCoreTileTopEdge) &&
-	   (tile->edges & pdfCoreTileRightEdge) &&
-	   xw >= tile->xDest &&
-	   yw < tile->yDest + tile->yMax - tile->yMin) ||
-	  ((tile->edges & pdfCoreTileTopEdge) &&
-	   xw >= tile->xDest && xw < tile->xDest + tile->xMax - tile->xMin &&
-	   yw < tile->yDest + tile->yMax - tile->yMin) ||
-	  ((tile->edges & pdfCoreTileBottomEdge) &&
-	   (tile->edges & pdfCoreTileLeftEdge) &&
-	   xw < tile->xDest + tile->xMax - tile->xMin &&
-	   yw >= tile->yDest) ||
-	  ((tile->edges & pdfCoreTileBottomEdge) &&
-	   (tile->edges & pdfCoreTileRightEdge) &&
-	   xw >= tile->xDest &&
-	   yw >= tile->yDest) ||
-	  ((tile->edges & pdfCoreTileBottomEdge) &&
-	   xw >= tile->xDest && xw < tile->xDest + tile->xMax - tile->xMin &&
-	   yw >= tile->yDest) ||
-	  ((tile->edges & pdfCoreTileLeftEdge) &&
-	   xw < tile->xDest + tile->xMax - tile->xMin &&
-	   yw >= tile->yDest && yw < tile->yDest + tile->yMax - tile->yMin) ||
-	  ((tile->edges & pdfCoreTileRightEdge) &&
-	   xw >= tile->xDest &&
-	   yw >= tile->yDest && yw < tile->yDest + tile->yMax - tile->yMin)) {
-	*pg = page->page;
-	*xd = tile->xMin + xw - tile->xDest;
-	*yd = tile->yMin + yw - tile->yDest;
-	return gTrue;
-      }
-    }
-  }
-  *pg = 0;
-  *xd = *yd = 0;
-  return gFalse;
+  return tileMap->cvtWindowToDev(xw, yw, pg, xd, yd);
 }
 
-void PDFCore::cvtUserToWindow(int pg, double xu, double yu, int *xw, int *yw) {
-  PDFCorePage *page;
-  PDFCoreTile *tile;
-
-  if ((page = findPage(pg))) {
-    tile = (PDFCoreTile *)page->tiles->get(0);
-    *xw = tile->xDest + (int)(tile->ctm[0] * xu + tile->ctm[2] * yu +
-			      tile->ctm[4] + 0.5);
-    *yw = tile->yDest + (int)(tile->ctm[1] * xu + tile->ctm[3] * yu +
-			      tile->ctm[5] + 0.5);
-    return;
-  }
-  // this should never happen
-  *xw = *yw = 0;
+GBool PDFCore::cvtUserToWindow(int pg, double xu, double yu, int *xw, int *yw) {
+  return tileMap->cvtUserToWindow(pg, xu, yu, xw, yw);
 }
 
 void PDFCore::cvtUserToDev(int pg, double xu, double yu, int *xd, int *yd) {
-  PDFCorePage *page;
-  PDFCoreTile *tile;
-  double ctm[6];
-
-  if ((page = findPage(pg))) {
-    tile = (PDFCoreTile *)page->tiles->get(0);
-    *xd = (int)(tile->xMin + tile->ctm[0] * xu +
-		tile->ctm[2] * yu + tile->ctm[4] + 0.5);
-    *yd = (int)(tile->yMin + tile->ctm[1] * xu +
-		tile->ctm[3] * yu + tile->ctm[5] + 0.5);
-  } else {
-    doc->getCatalog()->getPage(pg)->getDefaultCTM(ctm, dpi, dpi, rotate,
-						  out->upsideDown());
-    *xd = (int)(ctm[0] * xu + ctm[2] * yu + ctm[4] + 0.5);
-    *yd = (int)(ctm[1] * xu + ctm[3] * yu + ctm[5] + 0.5);
-  }
+  tileMap->cvtUserToDev(pg, xu, yu, xd, yd);
 }
 
-void PDFCore::cvtDevToWindow(int pg, int xd, int yd, int *xw, int *yw) {
-  PDFCorePage *page;
-  PDFCoreTile *tile;
-  int i;
-
-  if ((page = findPage(pg))) {
-    for (i = 0; i < page->tiles->getLength(); ++i) {
-      tile = (PDFCoreTile *)page->tiles->get(i);
-      if (xd >= tile->xMin && xd < tile->xMax &&
-	  yd >= tile->yMin && yd < tile->yMax) {
-	*xw = tile->xDest + xd - tile->xMin;
-	*yw = tile->yDest + yd - tile->yMin;
-	return;
-      }
-    }
-  }
-  // this should never happen
-  *xw = *yw = 0;
+GBool PDFCore::cvtDevToWindow(int pg, int xd, int yd, int *xw, int *yw) {
+  return tileMap->cvtDevToWindow(pg, xd, yd, xw, yw);
 }
 
 void PDFCore::cvtDevToUser(int pg, int xd, int yd, double *xu, double *yu) {
-  PDFCorePage *page;
-  PDFCoreTile *tile;
+  tileMap->cvtDevToUser(pg, xd, yd, xu, yu);
+}
 
-  if ((page = findPage(pg))) {
-    tile = (PDFCoreTile *)page->tiles->get(0);
-    *xu = tile->ictm[0] * (xd - tile->xMin) +
-          tile->ictm[2] * (yd - tile->yMin) + tile->ictm[4];
-    *yu = tile->ictm[1] * (xd - tile->xMin) +
-          tile->ictm[3] * (yd - tile->yMin) + tile->ictm[5];
-    return;
+void PDFCore::getWindowPageRange(int x, int y, int w, int h,
+				 int *firstPage, int *lastPage) {
+  tileMap->getWindowPageRange(x, y, w, h, firstPage, lastPage);
+}
+
+int PDFCore::getPageNum() {
+  if (!doc || !doc->getNumPages()) {
+    return 0;
   }
-  // this should never happen
-  *xu = *yu = 0;
+  return tileMap->getFirstPage();
 }
 
-void PDFCore::setReverseVideo(GBool reverseVideoA) {
-  out->setReverseVideo(reverseVideoA);
-  update(topPage, scrollX, scrollY, zoom, rotate, gTrue, gFalse);
-}
-
-LinkAction *PDFCore::findLink(int pg, double x, double y) {
-  PDFCorePage *page;
-
-  if ((page = findPage(pg))) {
-    return page->links ? page->links->find(x, y) : (LinkAction *)NULL;
+int PDFCore::getMidPageNum() {
+  if (!doc || !doc->getNumPages()) {
+    return 0;
   }
-  return NULL;
+  return tileMap->getMidPage();
 }
 
-PDFCorePage *PDFCore::findPage(int pg) {
-  PDFCorePage *page;
+double PDFCore::getZoom() {
+  return state->getZoom();
+}
+
+double PDFCore::getZoomDPI(int page) {
+  if (!doc) {
+    return 0;
+  }
+  return tileMap->getDPI(page);
+}
+
+int PDFCore::getRotate() {
+  return state->getRotate();
+}
+
+DisplayMode PDFCore::getDisplayMode() {
+  return state->getDisplayMode();
+}
+
+int PDFCore::getScrollX() {
+  return state->getScrollX();
+}
+
+int PDFCore::getScrollY() {
+  return state->getScrollY();
+}
+
+int PDFCore::getWindowWidth() {
+  return state->getWinW();
+}
+
+int PDFCore::getWindowHeight() {
+  return state->getWinH();
+}
+
+void PDFCore::setPaperColor(SplashColorPtr paperColor) {
+  state->setPaperColor(paperColor);
+  invalidateWholeWindow();
+}
+
+void PDFCore::setMatteColor(SplashColorPtr matteColor) {
+  state->setMatteColor(matteColor);
+  invalidateWholeWindow();
+}
+
+void PDFCore::setReverseVideo(GBool reverseVideo) {
+  SplashColorPtr oldPaperColor;
+  SplashColor newPaperColor;
   int i;
 
-  for (i = 0; i < pages->getLength(); ++i) {
-    page = (PDFCorePage *)pages->get(i);
-    if (page->page == pg) {
-      return page;
+  if (reverseVideo != state->getReverseVideo()) {
+    state->setReverseVideo(reverseVideo);
+    oldPaperColor = state->getPaperColor();
+    for (i = 0; i < splashColorModeNComps[state->getColorMode()]; ++i) {
+      newPaperColor[i] = oldPaperColor[i] ^ 0xff;
+    }
+    state->setPaperColor(newPaperColor);
+    invalidateWholeWindow();
+  }
+}
+
+
+
+LinkAction *PDFCore::findLink(int pg, double x, double y) {
+  loadLinks(pg);
+  return links->find(x, y);
+}
+
+Annot *PDFCore::findAnnot(int pg, double x, double y) {
+  loadAnnots(pg);
+  return annots->find(x, y);
+}
+
+int PDFCore::findAnnotIdx(int pg, double x, double y) {
+  loadAnnots(pg);
+  return annots->findIdx(x, y);
+}
+
+Annot *PDFCore::getAnnot(int idx) {
+  if (!annots) {
+    return NULL;
+  }
+  if (idx < 0 || idx >= annots->getNumAnnots()) {
+    return NULL;
+  }
+  return annots->getAnnot(idx);
+}
+
+AcroFormField *PDFCore::findFormField(int pg, double x, double y) {
+  if (!doc->getCatalog()->getForm()) {
+    return NULL;
+  }
+  return doc->getCatalog()->getForm()->findField(pg, x, y);
+}
+
+int PDFCore::findFormFieldIdx(int pg, double x, double y) {
+  if (!doc->getCatalog()->getForm()) {
+    return -1;
+  }
+  return doc->getCatalog()->getForm()->findFieldIdx(pg, x, y);
+}
+
+AcroFormField *PDFCore::getFormField(int idx) {
+  if (!doc->getCatalog()->getForm()) {
+    return NULL;
+  }
+  if (idx < 0 || idx >= doc->getCatalog()->getForm()->getNumFields()) {
+    return NULL;
+  }
+  return doc->getCatalog()->getForm()->getField(idx);
+}
+
+GBool PDFCore::overText(int pg, double x, double y) {
+  loadText(pg);
+  return text->checkPointInside(x, y);
+}
+
+void PDFCore::forceRedraw() {
+  startUpdate();
+  state->forceRedraw();
+  finishUpdate(gFalse, gFalse);
+}
+
+void PDFCore::setTileDoneCbk(void (*cbk)(void *data), void *data) {
+  tileCache->setTileDoneCbk(cbk, data);
+}
+
+void PDFCore::setWindowSize(int winWidth, int winHeight) {
+  GBool doScroll;
+  int page, wx0, wy0, wx, wy, sx, sy;
+  double ux, uy;
+
+  startUpdate();
+
+  wx0 = wy0 = 0; // make gcc happy
+  doScroll = gFalse;
+  if (state->getZoom() < 0 && state->displayModeIsContinuous()) {
+    // save the user coordinates of the appropriate edge of the window
+    if (state->getDisplayMode() == displayHorizontalContinuous) {
+      wx0 = 0;
+      wy0 = state->getWinH() / 2;
+    } else {
+      wx0 = state->getWinW() / 2;
+      wy0 = 0;
+    }
+    if (!(doScroll = cvtWindowToUser(wx0, wy0, &page, &ux, &uy))) {
+      // tweak the save position if it happens to fall in a gutter
+      if (state->getDisplayMode() == displayContinuous) {
+	wy0 += tileMap->getContinuousPageSpacing();
+      } else if (state->getDisplayMode() == displaySideBySideContinuous) {
+	wx0 += tileMap->getSideBySidePageSpacing();
+	wy0 += tileMap->getContinuousPageSpacing();
+      } else { // state->getDisplayMode() == displayHorizontalContinuous
+	wx0 += tileMap->getHorizContinuousPageSpacing();
+      }
+      doScroll = cvtWindowToUser(wx0, wy0, &page, &ux, &uy);
     }
   }
-  return NULL;
+
+  state->setWindowSize(winWidth, winHeight);
+
+  if (doScroll) {
+    // restore the saved scroll position
+    cvtUserToWindow(page, ux, uy, &wx, &wy);
+    sx = state->getScrollX();
+    sy = state->getScrollY();
+    if (state->getDisplayMode() == displayHorizontalContinuous) {
+      sx += wx - wx0;
+    } else {
+      sy += wy - wy0;
+    }
+    state->setScrollPosition(page, sx, sy);
+  }
+
+  finishUpdate(gTrue, gFalse);
 }
 
-void PDFCore::redrawCbk(void *data, int x0, int y0, int x1, int y1) {
-  PDFCore *core = (PDFCore *)data;
+SplashBitmap *PDFCore::getWindowBitmap(GBool wholeWindow) {
+  GBool dummy;
 
-  core->curTile->bitmap = core->out->getBitmap();
-  core->clippedRedrawRect(core->curTile, x0, y0,
-			  core->curTile->xDest + x0, core->curTile->yDest + y0,
-			  x1 - x0 + 1, y1 - y0 + 1,
-			  0, 0, core->drawAreaWidth, core->drawAreaHeight,
-			  gTrue);
+  return tileCompositor->getBitmap(wholeWindow ? &bitmapFinished : &dummy);
 }
 
-void PDFCore::redrawWindow(int x, int y, int width, int height,
-			   GBool needUpdate) {
-  PDFCorePage *page;
-  PDFCoreTile *tile;
-  int xDest, yDest, w, i, j;
+void PDFCore::tick() {
+  if (!bitmapFinished) {
+    invalidateWholeWindow();
+  }
+}
 
-  if (pages->getLength() == 0) {
-    redrawRect(NULL, 0, 0, x, y, width, height);
+// Clear cached info (links, text) that's tied to a PDFDoc.
+void PDFCore::clearPage() {
+  if (links) {
+    delete links;
+  }
+  links = NULL;
+  linksPage = 0;
+
+  if (annots) {
+    delete annots;
+  }
+  annots = NULL;
+  annotsPage = 0;
+
+  if (text) {
+    delete text;
+  }
+  text = NULL;
+  textPage = 0;
+  textDPI = 0;
+  textRotate = 0;
+}
+
+// Load the links for <pg>.
+void PDFCore::loadLinks(int pg) {
+  if (links && linksPage == pg) {
     return;
   }
+  if (links) {
+    delete links;
+  }
+  links = doc->getLinks(pg);
+  linksPage = pg;
+}
 
-  for (i = 0; i < pages->getLength(); ++i) {
-    page = (PDFCorePage *)pages->get(i);
-    for (j = 0; j < page->tiles->getLength(); ++j) {
-      tile = (PDFCoreTile *)page->tiles->get(j);
-      if (tile->edges & pdfCoreTileTopEdge) {
-	if (tile->edges & pdfCoreTileLeftEdge) {
-	  xDest = 0;
-	} else {
-	  xDest = tile->xDest;
-	}
-	if (tile->edges & pdfCoreTileRightEdge) {
-	  w = drawAreaWidth - xDest;
-	} else {
-	  w = tile->xDest + (tile->xMax - tile->xMin) - xDest;
-	}
-	clippedRedrawRect(NULL, 0, 0,
-			  xDest, 0, w, tile->yDest,
-			  x, y, width, height, gFalse);
+// Load the annotations for <pg>.
+void PDFCore::loadAnnots(int pg) {
+  Object annotsObj;
+
+  if (annots && annotsPage == pg) {
+    return;
+  }
+  if (annots) {
+    delete annots;
+  }
+  doc->getCatalog()->getPage(pg)->getAnnots(&annotsObj);
+  annots = new Annots(doc, &annotsObj);
+  annotsObj.free();
+  annotsPage = pg;
+}
+
+// Extract text from <pg>.
+void PDFCore::loadText(int pg) {
+  TextOutputDev *textOut;
+  double dpi;
+  int rotate;
+
+  dpi = tileMap->getDPI(pg);
+  rotate = state->getRotate();
+  if (text && textPage == pg && textDPI == dpi && textRotate == rotate) {
+    return;
+  }
+  if (text) {
+    delete text;
+  }
+  textOut = new TextOutputDev(NULL, &textOutCtrl, gFalse);
+  if (!textOut->isOk()) {
+    text = new TextPage(&textOutCtrl);
+  } else {
+    doc->displayPage(textOut, pg, dpi, dpi, rotate, gFalse, gTrue, gFalse);
+    text = textOut->takeText();
+  }
+  delete textOut;
+  textPage = pg;
+  textDPI = dpi;
+  textRotate = rotate;
+}
+
+void PDFCore::getSelectionBBox(int *wxMin, int *wyMin, int *wxMax, int *wyMax) {
+  *wxMin = *wyMin = *wxMax = *wyMax = 0;
+  if (!state->hasSelection()) {
+    return;
+  }
+  getSelectRectListBBox(state->getSelectRects(), wxMin, wyMin, wxMax, wyMax);
+}
+
+void PDFCore::getSelectRectListBBox(GList *rects, int *wxMin, int *wyMin,
+				    int *wxMax, int *wyMax) {
+  SelectRect *rect;
+  int x, y, i;
+
+  *wxMin = *wyMin = *wxMax = *wyMax = 0;
+  for (i = 0; i < rects->getLength(); ++i) {
+    rect = (SelectRect *)rects->get(i);
+    tileMap->cvtUserToWindow(rect->page, rect->x0, rect->y0, &x, &y);
+    if (i == 0) {
+      *wxMin = *wxMax = x;
+      *wyMin = *wyMax = y;
+    } else {
+      if (x < *wxMin) {
+	*wxMin = x;
+      } else if (x > *wxMax) {
+	*wxMax = x;
       }
-      if (tile->edges & pdfCoreTileBottomEdge) {
-	if (tile->edges & pdfCoreTileLeftEdge) {
-	  xDest = 0;
-	} else {
-	  xDest = tile->xDest;
-	}
-	if (tile->edges & pdfCoreTileRightEdge) {
-	  w = drawAreaWidth - xDest;
-	} else {
-	  w = tile->xDest + (tile->xMax - tile->xMin) - xDest;
-	}
-	yDest = tile->yDest + (tile->yMax - tile->yMin);
-	clippedRedrawRect(NULL, 0, 0,
-			  xDest, yDest, w, drawAreaHeight - yDest,
-			  x, y, width, height, gFalse);
-      } else if ((tile->edges & pdfCoreTileBottomSpace) &&
-		 i+1 < pages->getLength()) {
-	if (tile->edges & pdfCoreTileLeftEdge) {
-	  xDest = 0;
-	} else {
-	  xDest = tile->xDest;
-	}
-	if (tile->edges & pdfCoreTileRightEdge) {
-	  w = drawAreaWidth - xDest;
-	} else {
-	  w = tile->xDest + (tile->xMax - tile->xMin) - xDest;
-	}
-	yDest = tile->yDest + (tile->yMax - tile->yMin);
-	clippedRedrawRect(NULL, 0, 0,
-			  xDest, yDest,
-			  w, ((PDFCorePage *)pages->get(i+1))->yDest - yDest,
-			  x, y, width, height, gFalse);
+      if (y < *wyMin) {
+	*wyMin = y;
+      } else if (y > *wyMax) {
+	*wyMax = y;
       }
-      if (tile->edges & pdfCoreTileLeftEdge) {
-	clippedRedrawRect(NULL, 0, 0,
-			  0, tile->yDest,
-			  tile->xDest, tile->yMax - tile->yMin,
-			  x, y, width, height, gFalse);
-      }
-      if (tile->edges & pdfCoreTileRightEdge) {
-	xDest = tile->xDest + (tile->xMax - tile->xMin);
-	clippedRedrawRect(NULL, 0, 0,
-			  xDest, tile->yDest,
-			  drawAreaWidth - xDest, tile->yMax - tile->yMin,
-			  x, y, width, height, gFalse);
-      }
-      clippedRedrawRect(tile, 0, 0, tile->xDest, tile->yDest,
-			tile->bitmap->getWidth(), tile->bitmap->getHeight(),
-			x, y, width, height, needUpdate);
+    }
+    tileMap->cvtUserToWindow(rect->page, rect->x1, rect->y1, &x, &y);
+    if (x < *wxMin) {
+      *wxMin = x;
+    } else if (x > *wxMax) {
+      *wxMax = x;
+    }
+    if (y < *wyMin) {
+      *wyMin = y;
+    } else if (y > *wyMax) {
+      *wyMax = y;
     }
   }
 }
 
-PDFCoreTile *PDFCore::newTile(int xDestA, int yDestA) {
-  return new PDFCoreTile(xDestA, yDestA);
+void PDFCore::checkInvalidate(int x, int y, int w, int h) {
+  if (x < 0) {
+    w += x;
+    x = 0;
+  }
+  if (x + w > state->getWinW()) {
+    w = state->getWinW() - x;
+  }
+  if (w <= 0) {
+    return;
+  }
+  if (y < 0) {
+    h += y;
+    y = 0;
+  }
+  if (y + h > state->getWinH()) {
+    h = state->getWinH() - y;
+  }
+  if (h <= 0) {
+    return;
+  }
+  invalidate(x, y, w, h);
 }
 
-void PDFCore::updateTileData(PDFCoreTile *tileA,
-			     int xSrc, int ySrc, int width, int height) {
-}
-
-void PDFCore::clippedRedrawRect(PDFCoreTile *tile, int xSrc, int ySrc,
-				int xDest, int yDest, int width, int height,
-				int xClip, int yClip, int wClip, int hClip,
-				GBool needUpdate) {
-  if (tile && needUpdate) {
-    updateTileData(tile, xSrc, ySrc, width, height);
-  }
-  if (xDest < xClip) {
-    xSrc += xClip - xDest;
-    width -= xClip - xDest;
-    xDest = xClip;
-  }
-  if (xDest + width > xClip + wClip) {
-    width = xClip + wClip - xDest;
-  }
-  if (yDest < yClip) {
-    ySrc += yClip - yDest;
-    height -= yClip - yDest;
-    yDest = yClip;
-  }
-  if (yDest + height > yClip + hClip) {
-    height = yClip + hClip - yDest;
-  }
-  if (width > 0 && height > 0) {
-    redrawRect(tile, xSrc, ySrc, xDest, yDest, width, height);
-  }
+void PDFCore::invalidateWholeWindow() {
+  invalidate(0, 0, state->getWinW(), state->getWinH());
 }

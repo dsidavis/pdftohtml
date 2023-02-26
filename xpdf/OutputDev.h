@@ -19,15 +19,18 @@
 #include "CharTypes.h"
 
 class GString;
+class Gfx;
 class GfxState;
+struct GfxColor;
 class GfxColorSpace;
 class GfxImageColorMap;
-class GfxFunctionShading;
-class GfxAxialShading;
-class GfxRadialShading;
+class GfxShading;
 class Stream;
+class Links;
 class Link;
 class Catalog;
+class Page;
+class Function;
 
 //------------------------------------------------------------------------
 // OutputDev
@@ -56,10 +59,9 @@ public:
   // operations.
   virtual GBool useTilingPatternFill() { return gFalse; }
 
-  // Does this device use functionShadedFill(), axialShadedFill(), and
-  // radialShadedFill()?  If this returns false, these shaded fills
-  // will be reduced to a series of other drawing operations.
-  virtual GBool useShadedFills() { return gFalse; }
+  // Does this device use drawForm()?  If this returns false,
+  // form-type XObjects will be interpreted (i.e., unrolled).
+  virtual GBool useDrawForm() { return gFalse; }
 
   // Does this device use beginType3Char/endType3Char?  Otherwise,
   // text in Type 3 fonts will be drawn with drawChar/drawString.
@@ -68,10 +70,28 @@ public:
   // Does this device need non-text content?
   virtual GBool needNonText() { return gTrue; }
 
+  // Does this device require incCharCount to be called for text on
+  // non-shown layers?
+  virtual GBool needCharCount() { return gFalse; }
+
+
+
   //----- initialization and control
 
   // Set default transform matrix.
   virtual void setDefaultCTM(double *ctm);
+
+  // Check to see if a page slice should be displayed.  If this
+  // returns false, the page display is aborted.  Typically, an
+  // OutputDev will use some alternate means to display the page
+  // before returning false.
+  virtual GBool checkPageSlice(Page *page, double hDPI, double vDPI,
+			       int rotate, GBool useMediaBox, GBool crop,
+			       int sliceX, int sliceY, int sliceW, int sliceH,
+			       GBool printing,
+			       GBool (*abortCheckCbk)(void *data) = NULL,
+			       void *abortCheckCbkData = NULL)
+    { return gTrue; }
 
   // Start a page.
   virtual void startPage(int pageNum, GfxState *state) {}
@@ -79,20 +99,15 @@ public:
   // End a page.
   virtual void endPage() {}
 
-  // Dump page contents to display.
-  virtual void dump() {}
-
   //----- coordinate conversion
 
   // Convert between device and user coordinates.
   virtual void cvtDevToUser(double dx, double dy, double *ux, double *uy);
+  virtual void cvtUserToDev(double ux, double uy, double *dx, double *dy);
   virtual void cvtUserToDev(double ux, double uy, int *dx, int *dy);
 
   double *getDefCTM() { return defCTM; }
   double *getDefICTM() { return defICTM; }
-
-  //----- link borders
-  virtual void drawLink(Link *link, Catalog *catalog) {}
 
   //----- save/restore graphics state
   virtual void saveState(GfxState *state) {}
@@ -108,6 +123,7 @@ public:
   virtual void updateLineCap(GfxState *state) {}
   virtual void updateMiterLimit(GfxState *state) {}
   virtual void updateLineWidth(GfxState *state) {}
+  virtual void updateStrokeAdjust(GfxState *state) {}
   virtual void updateFillColorSpace(GfxState *state) {}
   virtual void updateStrokeColorSpace(GfxState *state) {}
   virtual void updateFillColor(GfxState *state) {}
@@ -117,6 +133,9 @@ public:
   virtual void updateStrokeOpacity(GfxState *state) {}
   virtual void updateFillOverprint(GfxState *state) {}
   virtual void updateStrokeOverprint(GfxState *state) {}
+  virtual void updateOverprintMode(GfxState *state) {}
+  virtual void updateRenderingIntent(GfxState *state) {}
+  virtual void updateTransfer(GfxState *state) {}
 
   //----- update text state
   virtual void updateFont(GfxState *state) {}
@@ -128,24 +147,25 @@ public:
   virtual void updateHorizScaling(GfxState *state) {}
   virtual void updateTextPos(GfxState *state) {}
   virtual void updateTextShift(GfxState *state, double shift) {}
+  virtual void saveTextPos(GfxState *state) {}
+  virtual void restoreTextPos(GfxState *state) {}
 
   //----- path painting
   virtual void stroke(GfxState *state) {}
   virtual void fill(GfxState *state) {}
   virtual void eoFill(GfxState *state) {}
-  virtual void tilingPatternFill(GfxState *state, Object *str,
-				 int paintType, Dict *resDict,
+  virtual void tilingPatternFill(GfxState *state, Gfx *gfx, Object *strRef,
+				 int paintType, int tilingType, Dict *resDict,
 				 double *mat, double *bbox,
 				 int x0, int y0, int x1, int y1,
 				 double xStep, double yStep) {}
-  virtual void functionShadedFill(GfxState *state,
-				  GfxFunctionShading *shading) {}
-  virtual void axialShadedFill(GfxState *state, GfxAxialShading *shading) {}
-  virtual void radialShadedFill(GfxState *state, GfxRadialShading *shading) {}
+  virtual GBool shadedFill(GfxState *state, GfxShading *shading)
+    { return gFalse; }
 
   //----- path clipping
   virtual void clip(GfxState *state) {}
   virtual void eoClip(GfxState *state) {}
+  virtual void clipToStrokePath(GfxState *state) {}
 
   //----- text drawing
   virtual void beginStringOp(GfxState *state) {}
@@ -162,28 +182,34 @@ public:
 			       CharCode code, Unicode *u, int uLen);
   virtual void endType3Char(GfxState *state) {}
   virtual void endTextObject(GfxState *state) {}
+  virtual void incCharCount(int nChars) {}
+  virtual void beginActualText(GfxState *state, Unicode *u, int uLen) {}
+  virtual void endActualText(GfxState *state) {}
 
   //----- image drawing
   virtual void drawImageMask(GfxState *state, Object *ref, Stream *str,
 			     int width, int height, GBool invert,
-			     GBool inlineImg);
+			     GBool inlineImg, GBool interpolate);
+  virtual void setSoftMaskFromImageMask(GfxState *state,
+					Object *ref, Stream *str,
+					int width, int height, GBool invert,
+					GBool inlineImg, GBool interpolate);
   virtual void drawImage(GfxState *state, Object *ref, Stream *str,
 			 int width, int height, GfxImageColorMap *colorMap,
-			 int *maskColors, GBool inlineImg);
+			 int *maskColors, GBool inlineImg, GBool interpolate);
   virtual void drawMaskedImage(GfxState *state, Object *ref, Stream *str,
 			       int width, int height,
 			       GfxImageColorMap *colorMap,
-			       Stream *maskStr, int maskWidth, int maskHeight,
-			       GBool maskInvert);
+			       Object *maskRef, Stream *maskStr,
+			       int maskWidth, int maskHeight,
+			       GBool maskInvert, GBool interpolate);
   virtual void drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str,
 				   int width, int height,
 				   GfxImageColorMap *colorMap,
-				   Stream *maskStr,
+				   Object *maskRef, Stream *maskStr,
 				   int maskWidth, int maskHeight,
-				   GfxImageColorMap *maskColorMap);
-
-
-  virtual void form1(GfxState *state, Object *str, Dict *resDict, double *matrix, double *bbox) {}
+				   GfxImageColorMap *maskColorMap,
+				   double *matte, GBool interpolate);
 
 #if OPI_SUPPORT
   //----- OPI functions
@@ -196,8 +222,25 @@ public:
   virtual void type3D1(GfxState *state, double wx, double wy,
 		       double llx, double lly, double urx, double ury) {}
 
+  //----- form XObjects
+  virtual void drawForm(Ref id) {}
+
   //----- PostScript XObjects
   virtual void psXObject(Stream *psStream, Stream *level1Stream) {}
+
+  //----- transparency groups and soft masks
+  virtual GBool beginTransparencyGroup(GfxState *state, double *bbox,
+				       GfxColorSpace *blendingColorSpace,
+				       GBool isolated, GBool knockout,
+				       GBool forSoftMask) { return gTrue; }
+  virtual void endTransparencyGroup(GfxState *state) {}
+  virtual void paintTransparencyGroup(GfxState *state, double *bbox) {}
+  virtual void setSoftMask(GfxState *state, double *bbox, GBool alpha,
+			   Function *transferFunc, GfxColor *backdropColor) {}
+  virtual void clearSoftMask(GfxState *state) {}
+
+  //----- links
+  virtual void processLink(Link *link) {}
 
 private:
 

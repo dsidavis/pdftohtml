@@ -16,6 +16,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <ctype.h>
+#include "gmempp.h"
 #include "Lexer.h"
 #include "Error.h"
 
@@ -111,7 +112,7 @@ int Lexer::lookChar() {
 Object *Lexer::getObj(Object *obj) {
   char *p;
   int c, c2;
-  GBool comment, neg, done;
+  GBool comment, neg, doubleMinus, done, invalid;
   int numParen;
   int xi;
   double xf, scale;
@@ -140,21 +141,47 @@ Object *Lexer::getObj(Object *obj) {
   // number
   case '0': case '1': case '2': case '3': case '4':
   case '5': case '6': case '7': case '8': case '9':
-  case '-': case '.':
+  case '+': case '-': case '.':
+    // Adobe's number lexer has some "interesting" behavior:
+    // "--123" is interpreted as 0
+    // "--123.4" is interpreted as -123.4 [I've seen this in the wild]
+    // "50-100" is interpreted as 50 [I've seen this in the wild]
+    // "50--100" is interpreted as 50
+    // "50-100.0" is an error -- but older versions of Acrobat may
+    //   have interpreted it as 50100.0 (?)
+    // "50--100.0" is an error -- but older versions of Acrobat may
+    //   have interpreted it as 50100.0 (?)
+    // "50.0-100" is interpreted as 50.0 (or maybe 50.0100?)
+    // "50.0--100" is interpreted as 50.0 (or maybe 50.0100?)
+    // "-50-100" is interpreted as -50
+    // "-" is interpreted as 0
+    // "-." is interpreted as 0.0
     neg = gFalse;
-    xi = 0;
-    if (c == '-') {
+    doubleMinus = gFalse;
+    xf = xi = 0;
+    if (c == '+') {
+      // just ignore it
+    } else if (c == '-') {
       neg = gTrue;
+      if (lookChar() == '-') {
+	doubleMinus = gTrue;
+	do {
+	  getChar();
+	} while (lookChar() == '-');
+      }
     } else if (c == '.') {
       goto doReal;
     } else {
-      xi = c - '0';
+      xf = xi = c - '0';
     }
     while (1) {
       c = lookChar();
       if (isdigit(c)) {
 	getChar();
 	xi = xi * 10 + (c - '0');
+	if (xf < 1e20) {
+	  xf = xf * 10 + (c - '0');
+	}
       } else if (c == '.') {
 	getChar();
 	goto doReal;
@@ -162,19 +189,23 @@ Object *Lexer::getObj(Object *obj) {
 	break;
       }
     }
-    if (neg)
+    while ((c = lookChar()) == '-' || isdigit(c)) {
+      getChar();
+    }
+    if (neg) {
       xi = -xi;
+    }
+    if (doubleMinus) {
+      xi = 0;
+    }
     obj->initInt(xi);
     break;
   doReal:
-    xf = xi;
     scale = 0.1;
     while (1) {
       c = lookChar();
       if (c == '-') {
-	// ignore minus signs in the middle of numbers to match
-	// Adobe's behavior
-	error(getPos(), "Badly formatted number");
+	error(errSyntaxWarning, getPos(), "Badly formatted number");
 	getChar();
 	continue;
       }
@@ -185,8 +216,12 @@ Object *Lexer::getObj(Object *obj) {
       xf = xf + scale * (c - '0');
       scale *= 0.1;
     }
-    if (neg)
+    while ((c = lookChar()) == '-' || isdigit(c)) {
+      getChar();
+    }
+    if (neg) {
       xf = -xf;
+    }
     obj->initReal(xf);
     break;
 
@@ -202,12 +237,7 @@ Object *Lexer::getObj(Object *obj) {
       switch (c = getChar()) {
 
       case EOF:
-#if 0
-      // This breaks some PDF files, e.g., ones from Photoshop.
-      case '\r':
-      case '\n':
-#endif
-	error(getPos(), "Unterminated string");
+	error(errSyntaxError, getPos(), "Unterminated string");
 	done = gTrue;
 	break;
 
@@ -222,6 +252,16 @@ Object *Lexer::getObj(Object *obj) {
 	} else {
 	  c2 = c;
 	}
+	break;
+
+      case '\r':
+	// The PDF spec says that any literal end-of-line sequence
+	// (LF, CR, CR+LF) is translated to a single LF char.
+	c = lookChar();
+	if (c == '\n') {
+	  getChar();
+	}
+	c2 = '\n';
 	break;
 
       case '\\':
@@ -269,7 +309,7 @@ Object *Lexer::getObj(Object *obj) {
 	case '\n':
 	  break;
 	case EOF:
-	  error(getPos(), "Unterminated string");
+	  error(errSyntaxError, getPos(), "Unterminated string");
 	  done = gTrue;
 	  break;
 	default:
@@ -307,6 +347,8 @@ Object *Lexer::getObj(Object *obj) {
   case '/':
     p = tokBuf;
     n = 0;
+    s = NULL;
+    invalid = gFalse;
     while ((c = lookChar()) != EOF && !specialChars[c]) {
       getChar();
       if (c == '#') {
@@ -318,36 +360,59 @@ Object *Lexer::getObj(Object *obj) {
 	} else if (c2 >= 'a' && c2 <= 'f') {
 	  c = c2 - 'a' + 10;
 	} else {
+	  error(errSyntaxError, getPos(), "Invalid hex escape in name");
 	  goto notEscChar;
 	}
 	getChar();
-	c <<= 4;
-	c2 = getChar();
+	c2 = lookChar();
 	if (c2 >= '0' && c2 <= '9') {
-	  c += c2 - '0';
+	  c = (c << 4) + (c2 - '0');
 	} else if (c2 >= 'A' && c2 <= 'F') {
-	  c += c2 - 'A' + 10;
+	  c = (c << 4) + (c2 - 'A' + 10);
 	} else if (c2 >= 'a' && c2 <= 'f') {
-	  c += c2 - 'a' + 10;
+	  c = (c << 4) + (c2 - 'a' + 10);
 	} else {
-	  error(getPos(), "Illegal digit in hex char in name");
+	  error(errSyntaxError, getPos(), "Invalid hex escape in name");
+	  goto notEscChar;
+	}
+	getChar();
+	if (c == 0) {
+	  invalid = gTrue;
 	}
       }
      notEscChar:
-      if (++n == tokBufSize) {
-	error(getPos(), "Name token too long");
-	break;
+      // the PDF spec claims that names are limited to 127 chars, but
+      // Distiller 8 will produce longer names, and Acrobat 8 will
+      // accept longer names
+      ++n;
+      if (n < tokBufSize) {
+	*p++ = (char)c;
+      } else if (n == tokBufSize) {
+	*p = (char)c;
+	s = new GString(tokBuf, n);
+      } else {
+	s->append((char)c);
       }
-      *p++ = c;
     }
-    *p = '\0';
-    obj->initName(tokBuf);
+    if (invalid) {
+      error(errSyntaxError, getPos(), "Null character in name");
+      obj->initError();
+      if (s) {
+	delete s;
+      }
+    } else if (n < tokBufSize) {
+      *p = '\0';
+      obj->initName(tokBuf);
+    } else {
+      obj->initName(s->getCString());
+      delete s;
+    }
     break;
 
   // array punctuation
   case '[':
   case ']':
-    tokBuf[0] = c;
+    tokBuf[0] = (char)c;
     tokBuf[1] = '\0';
     obj->initCmd(tokBuf);
     break;
@@ -374,7 +439,7 @@ Object *Lexer::getObj(Object *obj) {
 	if (c == '>') {
 	  break;
 	} else if (c == EOF) {
-	  error(getPos(), "Unterminated hex string");
+	  error(errSyntaxError, getPos(), "Unterminated hex string");
 	  break;
 	} else if (specialChars[c] != 1) {
 	  c2 = c2 << 4;
@@ -385,7 +450,8 @@ Object *Lexer::getObj(Object *obj) {
 	  else if (c >= 'a' && c <= 'f')
 	    c2 += c - 'a' + 10;
 	  else
-	    error(getPos(), "Illegal character <%02x> in hex string", c);
+	    error(errSyntaxError, getPos(),
+		  "Illegal character <{0:02x}> in hex string", c);
 	  if (++m == 2) {
 	    if (n == tokBufSize) {
 	      if (!s)
@@ -421,7 +487,7 @@ Object *Lexer::getObj(Object *obj) {
       tokBuf[2] = '\0';
       obj->initCmd(tokBuf);
     } else {
-      error(getPos(), "Illegal character '>'");
+      error(errSyntaxError, getPos(), "Illegal character '>'");
       obj->initError();
     }
     break;
@@ -430,22 +496,22 @@ Object *Lexer::getObj(Object *obj) {
   case ')':
   case '{':
   case '}':
-    error(getPos(), "Illegal character '%c'", c);
+    error(errSyntaxError, getPos(), "Illegal character '{0:c}'", c);
     obj->initError();
     break;
 
   // command
   default:
     p = tokBuf;
-    *p++ = c;
+    *p++ = (char)c;
     n = 1;
     while ((c = lookChar()) != EOF && !specialChars[c]) {
       getChar();
       if (++n == tokBufSize) {
-	error(getPos(), "Command token too long");
+	error(errSyntaxError, getPos(), "Command token too long");
 	break;
       }
-      *p++ = c;
+      *p++ = (char)c;
     }
     *p = '\0';
     if (tokBuf[0] == 't' && !strcmp(tokBuf, "true")) {
@@ -478,6 +544,10 @@ void Lexer::skipToNextLine() {
       return;
     }
   }
+}
+
+void Lexer::skipToEOF() {
+  while (getChar() != EOF) ;
 }
 
 GBool Lexer::isSpace(int c) {

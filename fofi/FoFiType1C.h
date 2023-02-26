@@ -18,6 +18,7 @@
 #include "gtypes.h"
 #include "FoFiBase.h"
 
+class GHash;
 class GString;
 
 //------------------------------------------------------------------------
@@ -105,18 +106,34 @@ struct Type1CPrivateDict {
   int initialRandomSeed;
   int subrsOffset;
   double defaultWidthX;
-  GBool defaultWidthXFP;
+  GBool defaultWidthXInt;
   double nominalWidthX;
-  GBool nominalWidthXFP;
+  GBool nominalWidthXInt;
 };
 
+// operand kind
+enum Type1COpKind {
+  type1COpOperator,
+  type1COpInteger,
+  type1COpFloat,
+  type1COpRational
+};
+
+// operand
 struct Type1COp {
-  GBool isNum;			// true -> number, false -> operator
-  GBool isFP;			// true -> floating point number, false -> int
+  Type1COpKind kind;
   union {
-    double num;			// if num is true
-    int op;			// if num is false
+    int op;			// type1COpOperator
+    int intgr;			// type1COpInteger
+    double flt;			// type1COpFloat
+    struct {
+      int num, den;		// type1COpRational
+    } rat;
   };
+  GBool isZero();
+  GBool isNegative();
+  int toInt();
+  double toFloat();
 };
 
 struct Type1CEexecBuf {
@@ -149,45 +166,77 @@ public:
   // be NULL).  This is only useful with 8-bit fonts.
   char **getEncoding();
 
+  // Get the glyph names.
+  int getNumGlyphs() { return nGlyphs; }
+  GString *getGlyphName(int gid);
+
+  // Returns a hash mapping glyph names to GIDs.  This is only useful
+  // with 8-bit fonts.
+  GHash *getNameToGIDMap();
+
   // Return the mapping from CIDs to GIDs, and return the number of
   // CIDs in *<nCIDs>.  This is only useful for CID fonts.
-  Gushort *getCIDToGIDMap(int *nCIDs);
+  int *getCIDToGIDMap(int *nCIDs);
+
+  // Return the font matrix as an array of six numbers.
+  void getFontMatrix(double *mat);
 
   // Convert to a Type 1 font, suitable for embedding in a PostScript
   // file.  This is only useful with 8-bit fonts.  If <newEncoding> is
   // not NULL, it will be used in place of the encoding in the Type 1C
   // font.  If <ascii> is true the eexec section will be hex-encoded,
-  // otherwise it will be left as binary data.
-  void convertToType1(char **newEncoding, GBool ascii,
+  // otherwise it will be left as binary data.  If <psName> is non-NULL,
+  // it will be used as the PostScript font name.
+  void convertToType1(char *psName, const char **newEncoding, GBool ascii,
 		      FoFiOutputFunc outputFunc, void *outputStream);
 
   // Convert to a Type 0 CIDFont, suitable for embedding in a
   // PostScript file.  <psName> will be used as the PostScript font
-  // name.
-  void convertToCIDType0(char *psName,
+  // name.  There are three cases for the CID-to-GID mapping:
+  // (1) if <codeMap> is non-NULL, then it is the CID-to-GID mapping
+  // (2) if <codeMap> is NULL and this is a CID CFF font, then the
+  //     font's internal CID-to-GID mapping is used
+  // (3) is <codeMap> is NULL and this is an 8-bit CFF font, then
+  //     the identity CID-to-GID mapping is used
+  void convertToCIDType0(char *psName, int *codeMap, int nCodes,
 			 FoFiOutputFunc outputFunc, void *outputStream);
 
   // Convert to a Type 0 (but non-CID) composite font, suitable for
   // embedding in a PostScript file.  <psName> will be used as the
-  // PostScript font name.
-  void convertToType0(char *psName,
+  // PostScript font name.  There are three cases for the CID-to-GID
+  // mapping:
+  // (1) if <codeMap> is non-NULL, then it is the CID-to-GID mapping
+  // (2) if <codeMap> is NULL and this is a CID CFF font, then the
+  //     font's internal CID-to-GID mapping is used
+  // (3) is <codeMap> is NULL and this is an 8-bit CFF font, then
+  //     the identity CID-to-GID mapping is used
+  void convertToType0(char *psName, int *codeMap, int nCodes,
 		      FoFiOutputFunc outputFunc, void *outputStream);
+
+  // Write an OpenType file, encapsulating the CFF font.  <widths>
+  // provides the glyph widths (in design units) for <nWidths> glyphs.
+  // The cmap table must be supplied by the caller.
+  void convertToOpenType(FoFiOutputFunc outputFunc, void *outputStream,
+			 int nWidths, Gushort *widths,
+			 Guchar *cmapTable, int cmapTableLen);
 
 private:
 
   FoFiType1C(char *fileA, int lenA, GBool freeFileDataA);
-  void eexecCvtGlyph(Type1CEexecBuf *eb, char *glyphName,
+  void eexecCvtGlyph(Type1CEexecBuf *eb, const char *glyphName,
 		     int offset, int nBytes,
 		     Type1CIndex *subrIdx,
 		     Type1CPrivateDict *pDict);
   void cvtGlyph(int offset, int nBytes, GString *charBuf,
 		Type1CIndex *subrIdx, Type1CPrivateDict *pDict,
-		GBool top);
+		GBool top, int recursion);
   void cvtGlyphWidth(GBool useOp, GString *charBuf,
 		     Type1CPrivateDict *pDict);
-  void cvtNum(double x, GBool isFP, GString *charBuf);
-  void eexecWrite(Type1CEexecBuf *eb, char *s);
+  void cvtNum(Type1COp op, GString *charBuf);
+  void eexecWrite(Type1CEexecBuf *eb, const char *s);
   void eexecWriteCharstring(Type1CEexecBuf *eb, Guchar *s, int n);
+  void writePSString(char *s, FoFiOutputFunc outputFunc, void *outputStream);
+  Guint computeOpenTypeTableChecksum(Guchar *data, int length);
   GBool parse();
   void readTopDict();
   void readFD(int offset, int length, Type1CPrivateDict *pDict);

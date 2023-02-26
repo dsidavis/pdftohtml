@@ -26,27 +26,32 @@ GBool parseArgs(ArgDesc *args, int *argc, char *argv[]) {
   while (i < *argc) {
     if (!strcmp(argv[i], "--")) {
       --*argc;
-      for (j = i; j < *argc; ++j)
+      for (j = i; j < *argc; ++j) {
 	argv[j] = argv[j+1];
+      }
       break;
     } else if ((arg = findArg(args, argv[i]))) {
-      if (!grabArg(arg, i, argc, argv))
+      if (!grabArg(arg, i, argc, argv)) {
 	ok = gFalse;
+      }
+    } else if (argv[i][0] == '-') {
+      ok = gFalse;
+      break;
     } else {
-      ++i;
+      break;
     }
   }
   return ok;
 }
 
-void printUsage(char *program, char *otherArgs, ArgDesc *args) {
+void printUsage(const char *program, const char *otherArgs, ArgDesc *args) {
   ArgDesc *arg;
   char *typ;
   int w, w1;
 
   w = 0;
   for (arg = args; arg->arg; ++arg) {
-    if ((w1 = strlen(arg->arg)) > w)
+    if ((w1 = (int)strlen(arg->arg)) > w)
       w = w1;
   }
 
@@ -57,7 +62,7 @@ void printUsage(char *program, char *otherArgs, ArgDesc *args) {
 
   for (arg = args; arg->arg; ++arg) {
     fprintf(stderr, "  %s", arg->arg);
-    w1 = 9 + w - strlen(arg->arg);
+    w1 = 9 + w - (int)strlen(arg->arg);
     switch (arg->kind) {
     case argInt:
     case argIntDummy:
@@ -65,7 +70,7 @@ void printUsage(char *program, char *otherArgs, ArgDesc *args) {
       break;
     case argFP:
     case argFPDummy:
-      typ = " <fp>";
+      typ = " <number>";
       break;
     case argString:
     case argStringDummy:
@@ -103,8 +108,7 @@ static GBool grabArg(ArgDesc *arg, int i, int *argc, char *argv[]) {
   n = 0;
   switch (arg->kind) {
   case argFlag:
-      // toggle the current value.
-    *(GBool *)arg->val = (*(GBool *)arg->val) ? gFalse : gTrue; //gTrue;
+    *(GBool *)arg->val = gTrue;
     n = 1;
     break;
   case argInt:

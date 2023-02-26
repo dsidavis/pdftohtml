@@ -12,19 +12,13 @@
 #pragma implementation
 #endif
 
+#include "gmempp.h"
 #include "GString.h"
 #include "PDFDoc.h"
 #include "Decrypt.h"
 #include "Error.h"
 #include "GlobalParams.h"
-#if HAVE_XPDFCORE
-#  include "XPDFCore.h"
-#elif HAVE_WINPDFCORE
-#  include "WinPDFCore.h"
-#endif
-#ifdef ENABLE_PLUGINS
-#  include "XpdfPluginAPI.h"
-#endif
+#include "PDFCore.h"
 #include "SecurityHandler.h"
 
 //------------------------------------------------------------------------
@@ -34,25 +28,17 @@
 SecurityHandler *SecurityHandler::make(PDFDoc *docA, Object *encryptDictA) {
   Object filterObj;
   SecurityHandler *secHdlr;
-  XpdfSecurityHandler *xsh;
 
   encryptDictA->dictLookup("Filter", &filterObj);
   if (filterObj.isName("Standard")) {
     secHdlr = new StandardSecurityHandler(docA, encryptDictA);
   } else if (filterObj.isName()) {
-#ifdef ENABLE_PLUGINS
-    if ((xsh = globalParams->getSecurityHandler(filterObj.getName()))) {
-      secHdlr = new ExternalSecurityHandler(docA, encryptDictA, xsh);
-    } else {
-#endif
-      error(-1, "Couldn't find the '%s' security handler",
-	    filterObj.getName());
-      secHdlr = NULL;
-#ifdef ENABLE_PLUGINS
-    }
-#endif
+    error(errSyntaxError, -1, "Couldn't find the '{0:s}' security handler",
+	  filterObj.getName());
+    secHdlr = NULL;
   } else {
-    error(-1, "Missing or invalid 'Filter' entry in encryption dictionary");
+    error(errSyntaxError, -1,
+	  "Missing or invalid 'Filter' entry in encryption dictionary");
     secHdlr = NULL;
   }
   filterObj.free();
@@ -91,7 +77,7 @@ GBool SecurityHandler::checkEncryption(GString *ownerPassword,
     }
   }
   if (!ok) {
-    error(-1, "Incorrect password");
+    error(errCommandLine, -1, "Incorrect password");
   }
   return ok;
 }
@@ -126,8 +112,8 @@ StandardSecurityHandler::StandardSecurityHandler(PDFDoc *docA,
   SecurityHandler(docA)
 {
   Object versionObj, revisionObj, lengthObj;
-  Object ownerKeyObj, userKeyObj, permObj, fileIDObj;
-  Object fileIDObj1;
+  Object ownerKeyObj, userKeyObj, ownerEncObj, userEncObj;
+  Object permObj, fileIDObj, fileIDObj1;
   Object cryptFiltersObj, streamFilterObj, stringFilterObj;
   Object cryptFilterObj, cfmObj, cfLengthObj;
   Object encryptMetadataObj;
@@ -136,90 +122,178 @@ StandardSecurityHandler::StandardSecurityHandler(PDFDoc *docA,
   fileID = NULL;
   ownerKey = NULL;
   userKey = NULL;
+  ownerEnc = NULL;
+  userEnc = NULL;
+  fileKeyLength = 0;
 
+  //--- get the main parameters
   encryptDictA->dictLookup("V", &versionObj);
   encryptDictA->dictLookup("R", &revisionObj);
   encryptDictA->dictLookup("Length", &lengthObj);
   encryptDictA->dictLookup("O", &ownerKeyObj);
   encryptDictA->dictLookup("U", &userKeyObj);
+  encryptDictA->dictLookup("OE", &ownerEncObj);
+  encryptDictA->dictLookup("UE", &userEncObj);
   encryptDictA->dictLookup("P", &permObj);
   doc->getXRef()->getTrailerDict()->dictLookup("ID", &fileIDObj);
-  if (versionObj.isInt() &&
-      revisionObj.isInt() &&
-      ownerKeyObj.isString() && ownerKeyObj.getString()->getLength() == 32 &&
-      userKeyObj.isString() && userKeyObj.getString()->getLength() == 32 &&
-      permObj.isInt()) {
-    encVersion = versionObj.getInt();
-    encRevision = revisionObj.getInt();
-    // revision 2 forces a 40-bit key - some buggy PDF generators
-    // set the Length value incorrectly
-    if (encRevision == 2 || !lengthObj.isInt()) {
-      fileKeyLength = 5;
-    } else {
-      fileKeyLength = lengthObj.getInt() / 8;
-    }
-    encryptMetadata = gTrue;
-    //~ this currently only handles a subset of crypt filter functionality
-    if (encVersion == 4 && encRevision == 4) {
-      encryptDictA->dictLookup("CF", &cryptFiltersObj);
-      encryptDictA->dictLookup("StmF", &streamFilterObj);
-      encryptDictA->dictLookup("StrF", &stringFilterObj);
-      if (cryptFiltersObj.isDict() &&
-	  streamFilterObj.isName() &&
-	  stringFilterObj.isName() &&
-	  !strcmp(streamFilterObj.getName(), stringFilterObj.getName())) {
-	if (cryptFiltersObj.dictLookup(streamFilterObj.getName(),
-				       &cryptFilterObj)->isDict()) {
-	  if (cryptFilterObj.dictLookup("CFM", &cfmObj)->isName("V2")) {
-	    encVersion = 2;
-	    encRevision = 3;
-	    if (cryptFilterObj.dictLookup("Length", &cfLengthObj)->isInt()) {
-	      //~ according to the spec, this should be cfLengthObj / 8
-	      fileKeyLength = cfLengthObj.getInt();
-	    }
-	    cfLengthObj.free();
+  if (!versionObj.isInt() ||
+      !revisionObj.isInt() ||
+      !permObj.isInt() ||
+      !ownerKeyObj.isString() ||
+      !userKeyObj.isString()) {
+    error(errSyntaxError, -1, "Invalid encryption parameters");
+    goto done;
+  }
+  encVersion = versionObj.getInt();
+  encRevision = revisionObj.getInt();
+  encAlgorithm = cryptRC4;
+  // revision 2 forces a 40-bit key - some buggy PDF generators
+  // set the Length value incorrectly
+  if (encRevision == 2 || !lengthObj.isInt()) {
+    fileKeyLength = 5;
+  } else {
+    fileKeyLength = lengthObj.getInt() / 8;
+  }
+  encryptMetadata = gTrue;
+
+  //--- check for a crypt filter (which can modify the parameters)
+  //~ this currently only handles a subset of crypt filter functionality
+  //~ (in particular, it ignores the EFF entry in encryptDictA, and
+  //~ doesn't handle the case where StmF, StrF, and EFF are not all the
+  //~ same)
+  if ((encVersion == 4 || encVersion == 5) &&
+      (encRevision == 4 || encRevision == 5 || encRevision == 6)) {
+    encryptDictA->dictLookup("CF", &cryptFiltersObj);
+    encryptDictA->dictLookup("StmF", &streamFilterObj);
+    encryptDictA->dictLookup("StrF", &stringFilterObj);
+    if (cryptFiltersObj.isDict() &&
+	streamFilterObj.isName() &&
+	stringFilterObj.isName() &&
+	!strcmp(streamFilterObj.getName(), stringFilterObj.getName())) {
+      if (!strcmp(streamFilterObj.getName(), "Identity")) {
+	// no encryption on streams or strings
+	stringFilterObj.free();
+	streamFilterObj.free();
+	cryptFiltersObj.free();
+	goto done;
+      }
+      if (cryptFiltersObj.dictLookup(streamFilterObj.getName(),
+				     &cryptFilterObj)->isDict()) {
+	cryptFilterObj.dictLookup("CFM", &cfmObj);
+	if (cfmObj.isName("V2")) {
+	  if (cryptFilterObj.dictLookup("Length",
+					&cfLengthObj)->isInt()) {
+	    fileKeyLength = cfLengthObj.getInt();
 	  }
-	  cfmObj.free();
+	  cfLengthObj.free();
+	  encVersion = 2;
+	  encRevision = 3;
+	} else if (cfmObj.isName("AESV2")) {
+	  if (cryptFilterObj.dictLookup("Length",
+					&cfLengthObj)->isInt()) {
+	    fileKeyLength = cfLengthObj.getInt();
+	  }
+	  cfLengthObj.free();
+	  encVersion = 2;
+	  encRevision = 3;
+	  encAlgorithm = cryptAES;
+	} else if (cfmObj.isName("AESV3")) {
+	  if (cryptFilterObj.dictLookup("Length",
+					&cfLengthObj)->isInt()) {
+	    fileKeyLength = cfLengthObj.getInt();
+	  }
+	  cfLengthObj.free();
+	  encVersion = 5;
+	  if (encRevision != 5 && encRevision != 6) {
+	    encRevision = 6;
+	  }
+	  encAlgorithm = cryptAES256;
+	  // The PDF 2.0 spec says Length and CF.Length are both deprecated.
+	  // Acrobat X honors Length and ignores CF.Length.
+	  // I think it's safest to ignore both.
+	  fileKeyLength = 32;
 	}
-	cryptFilterObj.free();
+	cfmObj.free();
       }
-      stringFilterObj.free();
-      streamFilterObj.free();
-      cryptFiltersObj.free();
-      if (encryptDictA->dictLookup("EncryptMetadata",
-				   &encryptMetadataObj)->isBool()) {
-	encryptMetadata = encryptMetadataObj.getBool();
-      }
-      encryptMetadataObj.free();
+      cryptFilterObj.free();
     }
-    permFlags = permObj.getInt();
-    ownerKey = ownerKeyObj.getString()->copy();
-    userKey = userKeyObj.getString()->copy();
-    if (encVersion >= 1 && encVersion <= 2 &&
-	encRevision >= 2 && encRevision <= 3) {
-      if (fileIDObj.isArray()) {
-	if (fileIDObj.arrayGet(0, &fileIDObj1)->isString()) {
-	  fileID = fileIDObj1.getString()->copy();
-	} else {
-	  fileID = new GString();
-	}
-	fileIDObj1.free();
+    stringFilterObj.free();
+    streamFilterObj.free();
+    cryptFiltersObj.free();
+    if (encryptDictA->dictLookup("EncryptMetadata",
+				 &encryptMetadataObj)->isBool()) {
+      encryptMetadata = encryptMetadataObj.getBool();
+    }
+    encryptMetadataObj.free();
+  }
+
+  //--- version-specific parameters
+  if (encRevision <= 4) {
+    if (ownerKeyObj.getString()->getLength() != 32 ||
+	userKeyObj.getString()->getLength() != 32) {
+      error(errSyntaxError, -1, "Invalid encryption key length");
+      // this is non-fatal -- see below
+    }
+  } else if (encRevision <= 6) {
+    // the spec says 48 bytes, but Acrobat pads them out longer
+    if (ownerKeyObj.getString()->getLength() < 48 ||
+	userKeyObj.getString()->getLength() < 48 ||
+	!ownerEncObj.isString() ||
+	ownerEncObj.getString()->getLength() != 32 ||
+	!userEncObj.isString() ||
+	userEncObj.getString()->getLength() != 32) {
+      error(errSyntaxError, -1, "Invalid encryption key length");
+      goto done;
+    }
+  }
+  permFlags = permObj.getInt();
+  ownerKey = ownerKeyObj.getString()->copy();
+  userKey = userKeyObj.getString()->copy();
+  if (encRevision <= 4) {
+    // Adobe apparently zero-pads the U value (and maybe the O value?)
+    // if it's short
+    while (ownerKey->getLength() < 32) {
+      ownerKey->append((char)0x00);
+    }
+    while (userKey->getLength() < 32) {
+      userKey->append((char)0x00);
+    }
+  }
+  if (encVersion >= 1 && encVersion <= 2 &&
+      encRevision >= 2 && encRevision <= 3) {
+    if (fileIDObj.isArray()) {
+      if (fileIDObj.arrayGet(0, &fileIDObj1)->isString()) {
+	fileID = fileIDObj1.getString()->copy();
       } else {
 	fileID = new GString();
       }
-      ok = gTrue;
+      fileIDObj1.free();
     } else {
-      error(-1, "Unsupported version/revision (%d/%d) of Standard security handler",
-	    encVersion, encRevision);
+      fileID = new GString();
     }
+    if (fileKeyLength > 16 || fileKeyLength <= 0) {
+      fileKeyLength = 16;
+    }
+    ok = gTrue;
+  } else if (encVersion == 5 && (encRevision == 5 || encRevision == 6)) {
+    fileID = new GString(); // unused for V=R=5
+    ownerEnc = ownerEncObj.getString()->copy();
+    userEnc = userEncObj.getString()->copy();
+    if (fileKeyLength > 32 || fileKeyLength <= 0) {
+      fileKeyLength = 32;
+    }
+    ok = gTrue;
   } else {
-    error(-1, "Weird encryption info");
+    error(errUnimplemented, -1,
+	  "Unsupported version/revision ({0:d}/{1:d}) of Standard security handler",
+	  encVersion, encRevision);
   }
-  if (fileKeyLength > 16) {
-    fileKeyLength = 16;
-  }
+
+ done:
   fileIDObj.free();
   permObj.free();
+  userEncObj.free();
+  ownerEncObj.free();
   userKeyObj.free();
   ownerKeyObj.free();
   lengthObj.free();
@@ -237,6 +311,16 @@ StandardSecurityHandler::~StandardSecurityHandler() {
   if (userKey) {
     delete userKey;
   }
+  if (ownerEnc) {
+    delete ownerEnc;
+  }
+  if (userEnc) {
+    delete userEnc;
+  }
+}
+
+GBool StandardSecurityHandler::isUnencrypted() {
+  return encVersion == -1 && encRevision == -1;
 }
 
 void *StandardSecurityHandler::makeAuthData(GString *ownerPassword,
@@ -248,27 +332,14 @@ void *StandardSecurityHandler::makeAuthData(GString *ownerPassword,
 }
 
 void *StandardSecurityHandler::getAuthData() {
-#if HAVE_XPDFCORE
-  XPDFCore *core;
+  PDFCore *core;
   GString *password;
 
-  if (!(core = (XPDFCore *)doc->getGUIData()) ||
+  if (!(core = doc->getCore()) ||
       !(password = core->getPassword())) {
     return NULL;
   }
   return new StandardAuthData(password, password->copy());
-#elif HAVE_WINPDFCORE
-  WinPDFCore *core;
-  GString *password;
-
-  if (!(core = (WinPDFCore *)doc->getGUIData()) ||
-      !(password = core->getPassword())) {
-    return NULL;
-  }
-  return new StandardAuthData(password, password->copy());
-#else
-  return NULL;
-#endif
 }
 
 void StandardSecurityHandler::freeAuthData(void *authData) {
@@ -289,88 +360,11 @@ GBool StandardSecurityHandler::authorize(void *authData) {
     userPassword = NULL;
   }
   if (!Decrypt::makeFileKey(encVersion, encRevision, fileKeyLength,
-			    ownerKey, userKey, permFlags, fileID,
+			    ownerKey, userKey, ownerEnc, userEnc,
+			    permFlags, fileID,
 			    ownerPassword, userPassword, fileKey,
 			    encryptMetadata, &ownerPasswordOk)) {
     return gFalse;
   }
   return gTrue;
 }
-
-#ifdef ENABLE_PLUGINS
-
-//------------------------------------------------------------------------
-// ExternalSecurityHandler
-//------------------------------------------------------------------------
-
-ExternalSecurityHandler::ExternalSecurityHandler(PDFDoc *docA,
-						 Object *encryptDictA,
-						 XpdfSecurityHandler *xshA):
-  SecurityHandler(docA)
-{
-  encryptDictA->copy(&encryptDict);
-  xsh = xshA;
-  ok = gFalse;
-
-  if (!(*xsh->newDoc)(xsh->handlerData, (XpdfDoc)docA,
-		      (XpdfObject)encryptDictA, &docData)) {
-    return;
-  }
-
-  ok = gTrue;
-}
-
-ExternalSecurityHandler::~ExternalSecurityHandler() {
-  (*xsh->freeDoc)(xsh->handlerData, docData);
-  encryptDict.free();
-}
-
-void *ExternalSecurityHandler::makeAuthData(GString *ownerPassword,
-					    GString *userPassword) {
-  char *opw, *upw;
-  void *authData;
-
-  opw = ownerPassword ? ownerPassword->getCString() : (char *)NULL;
-  upw = userPassword ? userPassword->getCString() : (char *)NULL;
-  if (!(*xsh->makeAuthData)(xsh->handlerData, docData, opw, upw, &authData)) {
-    return NULL;
-  }
-  return authData;
-}
-
-void *ExternalSecurityHandler::getAuthData() {
-  void *authData;
-
-  if (!(*xsh->getAuthData)(xsh->handlerData, docData, &authData)) {
-    return NULL;
-  }
-  return authData;
-}
-
-void ExternalSecurityHandler::freeAuthData(void *authData) {
-  (*xsh->freeAuthData)(xsh->handlerData, docData, authData);
-}
-
-GBool ExternalSecurityHandler::authorize(void *authData) {
-  char *key;
-  int length;
-
-  if (!ok) {
-    return gFalse;
-  }
-  permFlags = (*xsh->authorize)(xsh->handlerData, docData, authData);
-  if (!(permFlags & xpdfPermissionOpen)) {
-    return gFalse;
-  }
-  if (!(*xsh->getKey)(xsh->handlerData, docData, &key, &length, &encVersion)) {
-    return gFalse;
-  }
-  if ((fileKeyLength = length) > 16) {
-    fileKeyLength = 16;
-  }
-  memcpy(fileKey, key, fileKeyLength);
-  (*xsh->freeKey)(xsh->handlerData, docData, key, length);
-  return gTrue;
-}
-
-#endif // ENABLE_PLUGINS

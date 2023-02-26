@@ -2,6 +2,8 @@
 //
 // SplashState.cc
 //
+// Copyright 2003-2013 Glyph & Cog, LLC
+//
 //========================================================================
 
 #include <aconf.h>
@@ -12,9 +14,11 @@
 
 #include <string.h>
 #include "gmem.h"
+#include "gmempp.h"
 #include "SplashPattern.h"
 #include "SplashScreen.h"
 #include "SplashClip.h"
+#include "SplashBitmap.h"
 #include "SplashState.h"
 
 //------------------------------------------------------------------------
@@ -23,20 +27,28 @@
 
 // number of components in each color mode
 int splashColorModeNComps[] = {
-  1, 1, 2, 3, 3, 4, 4
+  1, 1, 3, 3
+#if SPLASH_CMYK
+  , 4
+#endif
 };
 
-SplashState::SplashState(int width, int height) {
+SplashState::SplashState(int width, int height, GBool vectorAntialias,
+			 SplashScreenParams *screenParams) {
   SplashColor color;
+  int i;
 
+  matrix[0] = 1;  matrix[1] = 0;
+  matrix[2] = 0;  matrix[3] = 1;
+  matrix[4] = 0;  matrix[5] = 0;
   memset(&color, 0, sizeof(SplashColor));
   strokePattern = new SplashSolidColor(color);
   fillPattern = new SplashSolidColor(color);
-  screen = new SplashScreen(10);
+  screen = new SplashScreen(screenParams);
   blendFunc = NULL;
   strokeAlpha = 1;
   fillAlpha = 1;
-  lineWidth = 0;
+  lineWidth = 1;
   lineCap = splashLineCapButt;
   lineJoin = splashLineJoinMiter;
   miterLimit = 10;
@@ -44,11 +56,111 @@ SplashState::SplashState(int width, int height) {
   lineDash = NULL;
   lineDashLength = 0;
   lineDashPhase = 0;
-  clip = new SplashClip(0, 0, width - 1, height - 1);
+  strokeAdjust = splashStrokeAdjustOff;
+  clip = new SplashClip(0, 0, width, height);
+  clipIsShared = gFalse;
+  softMask = NULL;
+  deleteSoftMask = gFalse;
+  inNonIsolatedGroup = gFalse;
+  inKnockoutGroup = gFalse;
+#if SPLASH_CMYK
+  rgbTransferR = (Guchar *)gmalloc(8 * 256);
+  rgbTransferG = rgbTransferR + 256;
+  rgbTransferB = rgbTransferG + 256;
+  grayTransfer = rgbTransferB + 256;
+  cmykTransferC = grayTransfer + 256;
+  cmykTransferM = cmykTransferC + 256;
+  cmykTransferY = cmykTransferM + 256;
+  cmykTransferK = cmykTransferY + 256;
+#else
+  rgbTransferR = (Guchar *)gmalloc(4 * 256);
+  rgbTransferG = rgbTransferR + 256;
+  rgbTransferB = rgbTransferG + 256;
+  grayTransfer = rgbTransferB + 256;
+#endif
+  for (i = 0; i < 256; ++i) {
+    rgbTransferR[i] = (Guchar)i;
+    rgbTransferG[i] = (Guchar)i;
+    rgbTransferB[i] = (Guchar)i;
+    grayTransfer[i] = (Guchar)i;
+#if SPLASH_CMYK
+    cmykTransferC[i] = (Guchar)i;
+    cmykTransferM[i] = (Guchar)i;
+    cmykTransferY[i] = (Guchar)i;
+    cmykTransferK[i] = (Guchar)i;
+#endif
+  }
+  transferIsShared = gFalse;
+  overprintMask = 0xffffffff;
+  enablePathSimplification = gFalse;
+  next = NULL;
+}
+
+SplashState::SplashState(int width, int height, GBool vectorAntialias,
+			 SplashScreen *screenA) {
+  SplashColor color;
+  int i;
+
+  matrix[0] = 1;  matrix[1] = 0;
+  matrix[2] = 0;  matrix[3] = 1;
+  matrix[4] = 0;  matrix[5] = 0;
+  memset(&color, 0, sizeof(SplashColor));
+  strokePattern = new SplashSolidColor(color);
+  fillPattern = new SplashSolidColor(color);
+  screen = screenA->copy();
+  blendFunc = NULL;
+  strokeAlpha = 1;
+  fillAlpha = 1;
+  lineWidth = 1;
+  lineCap = splashLineCapButt;
+  lineJoin = splashLineJoinMiter;
+  miterLimit = 10;
+  flatness = 1;
+  lineDash = NULL;
+  lineDashLength = 0;
+  lineDashPhase = 0;
+  strokeAdjust = splashStrokeAdjustOff;
+  clip = new SplashClip(0, 0, width, height);
+  clipIsShared = gFalse;
+  softMask = NULL;
+  deleteSoftMask = gFalse;
+  inNonIsolatedGroup = gFalse;
+  inKnockoutGroup = gFalse;
+#if SPLASH_CMYK
+  rgbTransferR = (Guchar *)gmalloc(8 * 256);
+  rgbTransferG = rgbTransferR + 256;
+  rgbTransferB = rgbTransferG + 256;
+  grayTransfer = rgbTransferB + 256;
+  cmykTransferC = grayTransfer + 256;
+  cmykTransferM = cmykTransferC + 256;
+  cmykTransferY = cmykTransferM + 256;
+  cmykTransferK = cmykTransferY + 256;
+#else
+  rgbTransferR = (Guchar *)gmalloc(4 * 256);
+  rgbTransferG = rgbTransferR + 256;
+  rgbTransferB = rgbTransferG + 256;
+  grayTransfer = rgbTransferB + 256;
+#endif
+  for (i = 0; i < 256; ++i) {
+    rgbTransferR[i] = (Guchar)i;
+    rgbTransferG[i] = (Guchar)i;
+    rgbTransferB[i] = (Guchar)i;
+    grayTransfer[i] = (Guchar)i;
+#if SPLASH_CMYK
+    cmykTransferC[i] = (Guchar)i;
+    cmykTransferM[i] = (Guchar)i;
+    cmykTransferY[i] = (Guchar)i;
+    cmykTransferK[i] = (Guchar)i;
+#endif
+  }
+  transferIsShared = gFalse;
+  overprintMask = 0xffffffff;
+  enablePathSimplification = gFalse;
   next = NULL;
 }
 
 SplashState::SplashState(SplashState *state) {
+  memcpy(matrix, state->matrix, 6 * sizeof(SplashCoord));
   strokePattern = state->strokePattern->copy();
   fillPattern = state->fillPattern->copy();
   screen = state->screen->copy();
@@ -69,7 +181,26 @@ SplashState::SplashState(SplashState *state) {
     lineDashLength = 0;
   }
   lineDashPhase = state->lineDashPhase;
-  clip = state->clip->copy();
+  strokeAdjust = state->strokeAdjust;
+  clip = state->clip;
+  clipIsShared = gTrue;
+  softMask = state->softMask;
+  deleteSoftMask = gFalse;
+  inNonIsolatedGroup = state->inNonIsolatedGroup;
+  inKnockoutGroup = state->inKnockoutGroup;
+  rgbTransferR = state->rgbTransferR;
+  rgbTransferG = state->rgbTransferG;
+  rgbTransferB = state->rgbTransferB;
+  grayTransfer = state->grayTransfer;
+#if SPLASH_CMYK
+  cmykTransferC = state->cmykTransferC;
+  cmykTransferM = state->cmykTransferM;
+  cmykTransferY = state->cmykTransferY;
+  cmykTransferK = state->cmykTransferK;
+#endif
+  transferIsShared = gTrue;
+  overprintMask = state->overprintMask;
+  enablePathSimplification = state->enablePathSimplification;
   next = NULL;
 }
 
@@ -78,7 +209,15 @@ SplashState::~SplashState() {
   delete fillPattern;
   delete screen;
   gfree(lineDash);
-  delete clip;
+  if (!clipIsShared) {
+    delete clip;
+  }
+  if (!transferIsShared) {
+    gfree(rgbTransferR);
+  }
+  if (deleteSoftMask && softMask) {
+    delete softMask;
+  }
 }
 
 void SplashState::setStrokePattern(SplashPattern *strokePatternA) {
@@ -108,3 +247,103 @@ void SplashState::setLineDash(SplashCoord *lineDashA, int lineDashLengthA,
   }
   lineDashPhase = lineDashPhaseA;
 }
+
+GBool SplashState::lineDashContainsZeroLengthDashes() {
+  int i;
+
+  if (lineDashLength == 0) {
+    return gFalse;
+  }
+
+  // if the line dash array has an odd number of elements, we need to
+  // check all of the elements; if the length is even, we only need to
+  // check even-number elements
+  if (lineDashLength & 1) {
+    for (i = 0; i < lineDashLength; ++i) {
+      if (lineDash[i] == 0) {
+	return gTrue;
+      }
+    }
+  } else {
+    for (i = 0; i < lineDashLength; i += 2) {
+      if (lineDash[i] == 0) {
+	return gTrue;
+      }
+    }
+  }
+  return gFalse;
+}
+
+void SplashState::clipResetToRect(SplashCoord x0, SplashCoord y0,
+				  SplashCoord x1, SplashCoord y1) {
+  if (clipIsShared) {
+    clip = clip->copy();
+    clipIsShared = gFalse;
+  }
+  clip->resetToRect(x0, y0, x1, y1);
+}
+
+SplashError SplashState::clipToRect(SplashCoord x0, SplashCoord y0,
+				    SplashCoord x1, SplashCoord y1) {
+  if (clipIsShared) {
+    clip = clip->copy();
+    clipIsShared = gFalse;
+  }
+  return clip->clipToRect(x0, y0, x1, y1);
+}
+
+SplashError SplashState::clipToPath(SplashPath *path, GBool eo) {
+  if (clipIsShared) {
+    clip = clip->copy();
+    clipIsShared = gFalse;
+  }
+  return clip->clipToPath(path, matrix, flatness, eo,
+			  enablePathSimplification, strokeAdjust);
+}
+
+void SplashState::setSoftMask(SplashBitmap *softMaskA, GBool deleteBitmap) {
+  if (deleteSoftMask) {
+    delete softMask;
+  }
+  softMask = softMaskA;
+  deleteSoftMask = deleteBitmap;
+}
+
+void SplashState::setTransfer(Guchar *red, Guchar *green, Guchar *blue,
+			      Guchar *gray) {
+#if SPLASH_CMYK
+  int i;
+#endif
+
+  if (transferIsShared) {
+#if SPLASH_CMYK
+    rgbTransferR = (Guchar *)gmalloc(8 * 256);
+    rgbTransferG = rgbTransferR + 256;
+    rgbTransferB = rgbTransferG + 256;
+    grayTransfer = rgbTransferB + 256;
+    cmykTransferC = grayTransfer + 256;
+    cmykTransferM = cmykTransferC + 256;
+    cmykTransferY = cmykTransferM + 256;
+    cmykTransferK = cmykTransferY + 256;
+#else
+    rgbTransferR = (Guchar *)gmalloc(4 * 256);
+    rgbTransferG = rgbTransferR + 256;
+    rgbTransferB = rgbTransferG + 256;
+    grayTransfer = rgbTransferB + 256;
+#endif
+    transferIsShared = gFalse;
+  }
+  memcpy(rgbTransferR, red, 256);
+  memcpy(rgbTransferG, green, 256);
+  memcpy(rgbTransferB, blue, 256);
+  memcpy(grayTransfer, gray, 256);
+#if SPLASH_CMYK
+  for (i = 0; i < 256; ++i) {
+    cmykTransferC[i] = (Guchar)(255 - rgbTransferR[255 - i]);
+    cmykTransferM[i] = (Guchar)(255 - rgbTransferG[255 - i]);
+    cmykTransferY[i] = (Guchar)(255 - rgbTransferB[255 - i]);
+    cmykTransferK[i] = (Guchar)(255 - grayTransfer[255 - i]);
+  }
+#endif
+}
+

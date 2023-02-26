@@ -2,6 +2,8 @@
 //
 // SplashScreen.h
 //
+// Copyright 2003-2013 Glyph & Cog, LLC
+//
 //========================================================================
 
 #ifndef SPLASHSCREEN_H
@@ -19,10 +21,12 @@
 // SplashScreen
 //------------------------------------------------------------------------
 
+typedef Guchar *SplashScreenCursor;
+
 class SplashScreen {
 public:
 
-  SplashScreen(int sizeA);
+  SplashScreen(SplashScreenParams *params);
   SplashScreen(SplashScreen *screen);
   ~SplashScreen();
 
@@ -30,20 +34,47 @@ public:
 
   // Return the computed pixel value (0=black, 1=white) for the gray
   // level <value> at (<x>, <y>).
-  int test(int x, int y, SplashCoord value);
+  int test(int x, int y, Guchar value) {
+    int xx, yy;
+    xx = x & sizeM1;
+    yy = y & sizeM1;
+    return value < mat[(yy << log2Size) + xx] ? 0 : 1;
+  }
+
+  // To do a series of tests with the same y value, call
+  // getTestCursor(y), and then call testWithCursor(cursor, x, value)
+  // for each x.
+  SplashScreenCursor getTestCursor(int y) {
+    int yy;
+    yy = y & sizeM1;
+    return &mat[yy << log2Size];
+  }
+
+  int testWithCursor(SplashScreenCursor cursor, int x, Guchar value) {
+    int xx = x & sizeM1;
+    return value >= cursor[xx];
+  }
 
   // Returns true if value is above the white threshold or below the
   // black threshold, i.e., if the corresponding halftone will be
   // solid white or black.
-  GBool isStatic(SplashCoord value);
+  GBool isStatic(Guchar value) { return value < minVal || value >= maxVal; }
 
 private:
 
-  SplashCoord *mat;		// threshold matrix
+  void buildDispersedMatrix(int i, int j, int val,
+			    int delta, int offset);
+  void buildClusteredMatrix();
+  int distance(int x0, int y0, int x1, int y1);
+  void buildSCDMatrix(int r);
+
+  Guchar *mat;			// threshold matrix
   int size;			// size of the threshold matrix
-  SplashCoord minVal;		// any pixel value below minVal generates
+  int sizeM1;			// size - 1
+  int log2Size;			// log2(size)
+  Guchar minVal;		// any pixel value below minVal generates
 				//   solid black
-  SplashCoord maxVal;		// any pixel value above maxVal generates
+  Guchar maxVal;		// any pixel value above maxVal generates
 				//   solid white
 };
 

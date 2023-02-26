@@ -8,9 +8,10 @@
 
 #include <aconf.h>
 #include <stdlib.h>
+#include "gmempp.h"
 #include "FontEncodingTables.h"
 
-char *macRomanEncoding[256] = {
+const char *macRomanEncoding[256] = {
   NULL,
   NULL,
   NULL,
@@ -269,7 +270,7 @@ char *macRomanEncoding[256] = {
   "caron"
 };
 
-char *macExpertEncoding[256] = {
+const char *macExpertEncoding[256] = {
   NULL,
   NULL,
   NULL,
@@ -528,7 +529,7 @@ char *macExpertEncoding[256] = {
   NULL
 };
 
-char *winAnsiEncoding[256] = {
+const char *winAnsiEncoding[256] = {
   NULL,
   NULL,
   NULL,
@@ -787,7 +788,7 @@ char *winAnsiEncoding[256] = {
   "ydieresis"
 };
 
-char *standardEncoding[256] = {
+const char *standardEncoding[256] = {
   NULL,
   NULL,
   NULL,
@@ -1046,7 +1047,7 @@ char *standardEncoding[256] = {
   NULL
 };
 
-char *expertEncoding[256] = {
+const char *expertEncoding[256] = {
   NULL,
   NULL,
   NULL,
@@ -1305,7 +1306,7 @@ char *expertEncoding[256] = {
   "Ydieresissmall"
 };
 
-char *symbolEncoding[256] = {
+const char *symbolEncoding[256] = {
   NULL,
   NULL,
   NULL,
@@ -1564,7 +1565,7 @@ char *symbolEncoding[256] = {
   NULL
 };
 
-char *zapfDingbatsEncoding[256] = {
+const char *zapfDingbatsEncoding[256] = {
   NULL,
   NULL,
   NULL,
