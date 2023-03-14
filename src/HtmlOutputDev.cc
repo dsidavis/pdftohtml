@@ -840,7 +840,12 @@ void HtmlPage::dumpAsXML(FILE* f, int page){
       }
       const char *xstr = str1->getCString();
       for(int j = 0; j < strlen(xstr); j++) {
-          fprintf(f, "%c", xstr[j]);    //fputs(str,f);
+          if(xstr[j] == '\f')
+              continue;
+          else if(xstr[j] == '\n' || xstr[j] == '\r')
+              fprintf(f, "\n");
+          else
+              fprintf(f, "%c", xstr[j]);    //fputs(str,f);
           if(xstr[j] == '&')
               fputs("amp;", f);
       }
