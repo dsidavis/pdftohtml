@@ -1928,7 +1928,10 @@ void HtmlOutputDev::dumpMetaVars(FILE *file, Dict *info)
           char *tmp;
           if(val.isName())
               tmp = val.getName();
-          else
+          else if(val.isArray() || val.isDict()) {
+              //XXX TODO
+              // Output the elements of the array/dict.
+          } else
               tmp = val.getString()->getCString();
           if(tmp) {
               GString *s = insertEntities(tmp);
