@@ -18,7 +18,7 @@ FOFILIBDIR = ../fofi
 SPLASHSRCDIR = $(srcdir)/../splash
 SPLASHLIBDIR = ../splash
 
-CXXFLAGS += -g -DHAVE_CONFIG_H -I.. -I$(GOOSRCDIR) -I$(FOFISRCDIR) -I$(SPLASHSRCDIR) -I$(srcdir)           -I/usr/X11R6/include  -Wno-write-strings
+CXXFLAGS += -g -DHAVE_CONFIG_H -I.. -I$(GOOSRCDIR) -I$(FOFISRCDIR) -I$(SPLASHSRCDIR) -I$(srcdir) -I/usr/X11R6/include  -Wno-write-strings
 
 CC ?= cc
 CXX ?= c++
@@ -36,7 +36,75 @@ LIBPREFIX = lib
 
 #------------------------------------------------------------------------
 
-CXX_SRC = $(wildcard *.cc)
+CXX_SRC=$(wildcard *.cc)
+# If use wildcard with GNU make 4.3 or 4.4 on my OSX machine in this directory, get segmentation fault.
+
+CXX_SRC=AcroForm.cc \
+Annot.cc \
+Array.cc \
+BuiltinFont.cc \
+BuiltinFontTables.cc \
+CMap.cc \
+Catalog.cc \
+CharCodeToUnicode.cc \
+Decrypt.cc \
+Dict.cc \
+DisplayState.cc \
+Error.cc \
+FontEncodingTables.cc \
+Function.cc \
+Gfx.cc \
+GfxFont.cc \
+GfxState.cc \
+GlobalParams.cc \
+HTMLGen.cc \
+ImageOutputDev.cc \
+JArithmeticDecoder.cc \
+JBIG2Stream.cc \
+JPXStream.cc \
+Lexer.cc \
+Link.cc \
+NameToCharCode.cc \
+Object.cc \
+OptionalContent.cc \
+Outline.cc \
+OutputDev.cc \
+PDF417Barcode.cc \
+PDFCore.cc \
+PDFDoc.cc \
+PDFDocEncoding.cc \
+PSOutputDev.cc \
+PSTokenizer.cc \
+Page.cc \
+Parser.cc \
+PreScanOutputDev.cc \
+SecurityHandler.cc \
+ShadingImage.cc \
+SplashOutputDev.cc \
+Stream.cc \
+TextOutputDev.cc \
+TextString.cc \
+TileCache.cc \
+TileCompositor.cc \
+TileMap.cc \
+UTF8.cc \
+UnicodeMap.cc \
+UnicodeRemapping.cc \
+UnicodeTypeTable.cc \
+WebFont.cc \
+XFAScanner.cc \
+XRef.cc \
+Zoox.cc \
+pdfdetach.cc \
+pdffonts.cc \
+pdfimages.cc \
+pdfinfo.cc \
+pdftohtml.cc \
+pdftopng.cc \
+pdftoppm.cc \
+pdftops.cc \
+pdftotext.cc
+
 
 #------------------------------------------------------------------------
 
