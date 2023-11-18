@@ -80,7 +80,7 @@ public:
   int getLength() { return length; }
 
   // Get C string.
-  char *getCString() { return s; }
+    char *getCString() { return (length > 2 && s[0] == '\xfe' && s[1] == '\xff') ? s + 2 : s; }
 
   // Get <i>th character.
   char getChar(int i) { return s[i]; }
